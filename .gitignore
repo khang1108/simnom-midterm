@@ -1,0 +1,17 @@
+# Config & Tokens
+configs/kim_token.txt
+configs/openai_config.json
+*.token
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Data Cache & Processing
+data/ocr_cache.db
+data/processed/
+_temp*/
+
+data/
