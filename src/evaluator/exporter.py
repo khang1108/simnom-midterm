@@ -309,3 +309,4 @@ class AlignmentExporter:
         ws.freeze_panes = "A2"
 
         wb.save(output_path)
+

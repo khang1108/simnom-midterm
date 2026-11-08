@@ -13,5 +13,7 @@ __pycache__/
 data/ocr_cache.db
 data/processed/
 _temp*/
+output/
+*.zip
 
 data/

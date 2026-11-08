@@ -99,3 +99,4 @@ class TextCleaner:
         joined = "\n".join(valid_lines)
         joined = self.fix_line_break_hyphens(joined)
         return self.clean_spaces(joined)
+
