@@ -25,6 +25,8 @@ def process_folder(folder: Path, script_type: str, ocr_engine: OCREngine, dry_ru
 
     label_lines = []
     state_lines = []
+    char_label_lines = []
+    char_state_lines = []
 
     for img_path in tqdm(images, desc=f"OCR {folder.name}/"):
         if dry_run:
@@ -35,23 +37,55 @@ def process_folder(folder: Path, script_type: str, ocr_engine: OCREngine, dry_ru
             }]
         else:
             boxes = ocr_engine.recognize(img_path, script=script_type)
+            if not boxes or not any(b.get("transcription", "").strip() for b in boxes):
+                raise RuntimeError(f"OCR returned no text for {img_path.name}; labels were not written.")
 
-        label_line = PPOCRAdapter.format_label_entry(
-            folder_name=folder.name,
-            image_name=img_path.name,
-            boxes=boxes,
-            script_type=script_type
-        )
         state_line = PPOCRAdapter.format_state_entry(folder.name, img_path.name)
+
+        if script_type == "ch":
+            # Sắp xếp trước theo thứ tự đọc chuẩn rồi mới tách từng chữ để Label.txt và Label_char.txt khớp hoàn toàn
+            sorted_boxes = PPOCRAdapter.sort_boxes_reading_order(boxes, script_type=script_type)
+            label_line = PPOCRAdapter.format_label_entry(
+                folder_name=folder.name,
+                image_name=img_path.name,
+                boxes=sorted_boxes,
+                script_type=script_type,
+                preserve_order=True,
+            )
+            char_boxes = PPOCRAdapter.split_boxes_to_chars(sorted_boxes)
+            char_label_line = PPOCRAdapter.format_label_entry(
+                folder_name=folder.name,
+                image_name=img_path.name,
+                boxes=char_boxes,
+                script_type=script_type,
+                preserve_order=True,
+            )
+            char_label_lines.append(char_label_line)
+            char_state_lines.append(state_line)
+        else:
+            label_line = PPOCRAdapter.format_label_entry(
+                folder_name=folder.name,
+                image_name=img_path.name,
+                boxes=boxes,
+                script_type=script_type,
+            )
 
         label_lines.append(label_line)
         state_lines.append(state_line)
 
-    # Ghi file
+    # Ghi file chuẩn cột / dòng
     with open(folder / "Label.txt", "w", encoding="utf-8") as f:
         f.writelines(label_lines)
     with open(folder / "fileState.txt", "w", encoding="utf-8") as f:
         f.writelines(state_lines)
+
+    # Ghi file chuẩn từng chữ cho ch/ (nếu có)
+    if script_type == "ch" and char_label_lines:
+        with open(folder / "Label_char.txt", "w", encoding="utf-8") as f:
+            f.writelines(char_label_lines)
+        with open(folder / "fileState_char.txt", "w", encoding="utf-8") as f:
+            f.writelines(char_state_lines)
+        print(f"  [Success] ch/Label_char.txt & fileState_char.txt generated ({len(char_label_lines)} images)")
 
     if check_ppocr_status(folder):
         print(f"  [Success] {folder.name}/Label.txt & fileState.txt generated (All state = 1)")

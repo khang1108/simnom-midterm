@@ -103,7 +103,9 @@ class OCREngine:
         row = cur.fetchone()
         conn.close()
         if row and row[0]:
-            return json.loads(row[0])
+            boxes = json.loads(row[0])
+            # Các bản cũ có thể đã cache lỗi API thành []. Cho phép thử lại.
+            return boxes if boxes else None
         return None
 
     def _save_cached_result(self, file_hash: str, image_name: str, script: str, engine: str, boxes: List[Dict[str, Any]]):
@@ -195,7 +197,7 @@ class OCREngine:
     # BACKEND 2: OPENAI-COMPATIBLE VISION API (QUỐC NGỮ / HÁN NÔM)
     # -------------------------------------------------------------------------
     @staticmethod
-    def _detect_line_boxes_opencv(image_path: Path) -> List[List[List[int]]]:
+    def _detect_line_boxes_opencv(image_path: Path, script: str = "vi") -> List[List[List[int]]]:
         """Dùng OpenCV phát hiện chính xác tọa độ từng dòng chữ trên trang scan."""
         img = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
         if img is None:
@@ -210,71 +212,73 @@ class OCREngine:
         clean_bin = cv2.bitwise_and(binary, cv2.bitwise_not(cv2.bitwise_or(h_lines, v_lines)))
 
         # Giãn hình thái học theo chiều ngang để gom dòng
-        line_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(20, w // 15), 2))
+        kernel_size = (2, max(20, h // 15)) if script == "ch" else (max(20, w // 15), 2)
+        line_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, kernel_size)
         dilated = cv2.morphologyEx(clean_bin, cv2.MORPH_CLOSE, line_kernel)
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         rects = []
         for cnt in contours:
             x, y, cw, ch = cv2.boundingRect(cnt)
-            if cw > (w * 0.12) and 6 <= ch <= (h * 0.15):
+            if ((script == "ch" and ch > h * 0.12 and 6 <= cw <= w * 0.15)
+                    or (script != "ch" and cw > w * 0.12 and 6 <= ch <= h * 0.15)):
                 rects.append((x, y, cw, ch))
 
-        rects.sort(key=lambda r: r[1]) # Từ trên xuống dưới
+        rects.sort(key=(lambda r: -r[0]) if script == "ch" else (lambda r: r[1]))
         return [[[x, y], [x + cw, y], [x + cw, y + ch], [x, y + ch]] for x, y, cw, ch in rects]
 
     def _ocr_openai_vision(self, image_path: Path, script: str = "vi") -> List[Dict[str, Any]]:
-        with open(image_path, "rb") as f:
-            b64_image = base64.b64encode(f.read()).decode("utf-8")
-
-        if script == "vi":
-            prompt = (
-                "Trích xuất chính xác toàn bộ văn bản chữ Quốc ngữ trong trang sách scan này theo từng dòng.\n"
-                "QUY TẮC BẮT BUỘC:\n"
-                "1. Giữ nguyên 100% từ cổ và cách đặt dấu thanh cổ (ví dụ: 'I-ghê-rê-gia', 'thì lạ', 'đạy'...). Không tự ý hiện đại hóa chính tả.\n"
-                "2. Bỏ qua số trang in và tiêu đề sách ngoài lề trang.\n"
-                "3. Trả về DUY NHẤT một đối tượng JSON hợp lệ có dạng: {\"lines\": [\"dòng 1\", \"dòng 2\", ...]}"
-            )
-        else:
-            prompt = (
-                "Trích xuất chính xác toàn bộ văn bản chữ Hán Nôm trong trang sách cổ này theo từng cột dọc từ PHẢI sang TRÁI.\n"
-                "QUY TẮC: Giữ nguyên ký tự Hán Nôm gốc, không thêm khoảng trắng giữa các chữ.\n"
-                "Trả về DUY NHẤT đối tượng JSON có dạng: {\"lines\": [\"cột 1\", \"cột 2\", ...]}"
-            )
-
-        headers = {
-            "Authorization": f"Bearer {self.openai_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": self.openai_model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}", "detail": "high"}}
-                    ]
-                }
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.0
-        }
-
-        endpoint = f"{self.openai_base_url}/chat/completions"
-        resp = requests.post(endpoint, headers=headers, json=payload, timeout=60)
-        resp.raise_for_status()
-
-        content = resp.json()["choices"][0]["message"]["content"]
-        res_json = json.loads(content)
-        lines_text = res_json.get("lines", [])
-
-        # Phát hiện tọa độ bằng OpenCV
-        line_boxes = self._detect_line_boxes_opencv(image_path)
+        # Nhận dạng từng crop: văn bản luôn gắn với đúng vùng đã gửi,
+        # không ghép hai danh sách độc lập theo chỉ số.
+        img = cv2.imread(str(image_path))
+        if img is None:
+            raise ValueError(f"Cannot read image: {image_path}")
+        height, width = img.shape[:2]
+        regions = self._detect_line_boxes_opencv(image_path, script=script)
+        if not regions:
+            raise RuntimeError(f"No text regions detected in {image_path.name}")
+        prompt = (
+            "Đọc chính xác văn bản trong vùng ảnh này. "
+            + ("Đây là một cột Hán Nôm, đọc từ trên xuống dưới, không thêm khoảng trắng. "
+               if script == "ch" else "Đây là một dòng Quốc ngữ. ")
+            + 'Giữ nguyên chữ, từ cổ, dấu và chính tả; không suy đoán chữ ngoài ảnh. '
+              'Nếu chỉ có số trang, tiêu đề ngoài lề hoặc không có chữ thì trả text rỗng. '
+              'Trả duy nhất JSON {"text": "văn bản"}.'
+        )
         boxes = []
-        for idx, text in enumerate(lines_text):
-            pts = line_boxes[idx] if idx < len(line_boxes) else [[0, 0], [0, 0], [0, 0], [0, 0]]
-            boxes.append({"transcription": text.strip(), "points": pts})
+        for pts in regions:
+            if len(pts) != 4 or any(len(point) != 2 for point in pts):
+                raise ValueError("Invalid detected text region")
+            x1, x2 = min(p[0] for p in pts), max(p[0] for p in pts)
+            y1, y2 = min(p[1] for p in pts), max(p[1] for p in pts)
+            if not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
+                raise ValueError("Detected text region is empty or outside the image")
+            ok, encoded = cv2.imencode(".jpg", img[y1:y2, x1:x2])
+            if not ok:
+                raise RuntimeError("Cannot encode text crop")
+            b64_image = base64.b64encode(encoded.tobytes()).decode("utf-8")
+            payload = {
+                "model": self.openai_model,
+                "messages": [{"role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {
+                        "url": f"data:image/jpeg;base64,{b64_image}", "detail": "high"}},
+                ]}],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.0,
+            }
+            resp = requests.post(
+                f"{self.openai_base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.openai_key}", "Content-Type": "application/json"},
+                json=payload, timeout=60,
+            )
+            resp.raise_for_status()
+            result = json.loads(resp.json()["choices"][0]["message"]["content"])
+            if not isinstance(result, dict) or not isinstance(result.get("text"), str):
+                raise ValueError("Vision OCR response must contain a text string")
+            text = result["text"].strip()
+            if text:
+                boxes.append({"transcription": text, "points": pts})
         return boxes
 
     # -------------------------------------------------------------------------
@@ -388,6 +392,12 @@ class OCREngine:
                 boxes = self._ocr_tesseract(image_path)
                 engine_used = "tesseract:vie"
 
-        # Lưu cache
+        if not boxes or not any(b.get("transcription", "").strip() for b in boxes):
+            raise RuntimeError(
+                f"OCR produced no text for {image_path.name} (script={script}); "
+                "result was not cached. Check backend credentials or verify the page manually."
+            )
+
+        # Chỉ cache kết quả có văn bản; trang trắng cần được xác nhận riêng.
         self._save_cached_result(file_hash, image_path.name, script, engine_used, boxes)
         return boxes

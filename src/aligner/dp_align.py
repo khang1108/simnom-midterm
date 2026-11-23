@@ -24,8 +24,10 @@ class PhoneticDPAligner:
 
         # Trích xuất các ký tự Nôm và vị trí Unicode của chúng trong chuỗi nom_norm
         nom_tokens = [] # list of (char, start_idx, end_idx)
+        mask_positions = {i for match in re.finditer(r"\[MASK\]", nom_norm)
+                          for i in range(match.start(), match.end())}
         for idx, char in enumerate(nom_norm):
-            if char not in PUNCT_CHARS:
+            if idx not in mask_positions and char not in PUNCT_CHARS:
                 nom_tokens.append((char, idx, idx + 1))
 
         # Trích xuất các âm tiết Quốc ngữ và vị trí Unicode trong chuỗi vi_norm

@@ -1,0 +1,7 @@
+{
+  "meaning": [
+    {"from_image": "Lorem ipsum.010.jpg", "to_image": "Lorem ipsum.014.jpg"},
+    {"from_sentence": "Lorem ipsum.030.2", "to_sentence": "Lorem ipsum.030.3"},
+    {"from_sentence": "Lorem ipsum.040.1", "to_sentence": "Lorem ipsum.040.1"}
+  ]
+}

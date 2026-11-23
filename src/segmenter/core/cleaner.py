@@ -2,6 +2,9 @@ import re
 import unicodedata
 from typing import List, Optional
 
+VARIATION_SELECTOR_RE = re.compile(r"[\uFE00-\uFE0F\U000E0100-\U000E01EF]")
+
+
 class TextCleaner:
     def __init__(self, book_title_keywords: Optional[List[str]] = None):
         """
@@ -11,12 +14,19 @@ class TextCleaner:
         self.book_keywords = [unicodedata.normalize("NFC", kw.lower()) for kw in (book_title_keywords or [])]
 
     @staticmethod
-    def normalize_nfc(text: str) -> str:
-        """Chuẩn hóa Unicode về dạng NFC."""
+    def strip_variation_selectors(text: str) -> str:
+        """Loại bỏ ký tự chọn dạng (U+FE00..U+FE0F và U+E0100..U+E01EF) theo Quy định v2.4."""
         if not text:
             return ""
-        # Chuẩn hóa NFC
-        norm = unicodedata.normalize("NFC", text)
+        return VARIATION_SELECTOR_RE.sub("", text)
+
+    @classmethod
+    def normalize_nfc(cls, text: str) -> str:
+        """Chuẩn hóa Unicode về dạng NFC và loại bỏ ký tự chọn dạng / điều khiển."""
+        if not text:
+            return ""
+        # Chuẩn hóa NFC và loại bỏ variation selector (chiếm pos nhưng không hiển thị)
+        norm = cls.strip_variation_selectors(unicodedata.normalize("NFC", text))
         # Loại bỏ các ký tự điều khiển vô hình (trừ newline và tab)
         norm = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", norm)
         return norm
@@ -37,27 +47,22 @@ class TextCleaner:
     @staticmethod
     def fix_line_break_hyphens(text: str) -> str:
         """
-        Xử lý dấu nối bị bẻ dòng cuối trang/dòng (soft hyphen / line-break hyphen).
-        Ví dụ:
-          - 'ngư-\nời' -> 'người' (âm tiết bị bẻ đôi)
-          - 'khiêm-\nnhường' -> 'khiêm nhường' hoặc 'khiêm-nhường'
-          - Nhưng giữ nguyên 'A-ve', 'I-ghê-rê-gia', 'Phi-ri-tô'.
+        Xử lý dấu nối bị bẻ dòng cuối trang/dòng (line-end hyphen) theo Quy định v2.3/v2.4:
+        - Nếu cả hai mảnh bắt đầu bằng chữ hoa (tên riêng / viết tắt, vd: 'Sài-\nGòn') -> giữ gạch ngang ('Sài-Gòn').
+        - Trường hợp thường (vd: 'tin-\ntưởng') -> bỏ dấu gạch ngang và tách thành hai âm tiết ('tin tưởng').
         """
         if not text:
             return ""
-        
-        # Trường hợp 1: Âm tiết đơn bị bẻ đôi ở cuối dòng (ví dụ: 'ngư-\nời' -> 'người')
-        # Kiểm tra nếu phần trước hoặc sau không phải là một âm tiết hoàn chỉnh
-        def _join_broken_syllable(match):
+
+        def _join_broken_syllable(match: re.Match) -> str:
             part1 = match.group(1)
             part2 = match.group(2)
-            # Nếu ghép lại tạo thành từ không có dấu cách
-            # Đơn giản nối lại nếu part2 viết thường
-            return f"{part1}{part2}"
+            if part1[:1].isupper() and part2[:1].isupper():
+                return f"{part1}-{part2}"
+            return f"{part1} {part2}"
 
-        # Bẻ từ giữa âm tiết: vd 'tiế-\nng' -> 'tiếng'
-        text = re.sub(r"([a-zA-ZÀ-ỹ]+)-\s*\n\s*([a-zA-ZÀ-ỹ]+)", r"\1\2", text)
-        
+        text = re.sub(r"([A-Za-zÀ-ỹ]+)-\s*\n\s*([A-Za-zÀ-ỹ]+)", _join_broken_syllable, text)
+
         # Bỏ newline dư thừa nhưng giữ đoạn văn
         text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
         return text

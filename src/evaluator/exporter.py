@@ -10,6 +10,9 @@ from openpyxl.cell.text import InlineFont
 from openpyxl.styles.colors import Color
 
 PUNCT_CHARS = set("。，、！？：；「」『』（）()[].,!?:;\"' \t\n\r")
+VARIATION_SELECTOR_RE = re.compile(r"[\uFE00-\uFE0F\U000E0100-\U000E01EF]")
+ERROR_REQUIRED_KEYS = frozenset({"nom_pos", "nom_sub_text", "vi_pos", "vi_sub_text", "type"})
+WARN_ALLOWED_KEYS = ERROR_REQUIRED_KEYS | frozenset({"reviewed", "suggest", "suggest_by"})
 
 class AlignmentExporter:
     @staticmethod
@@ -32,31 +35,97 @@ class AlignmentExporter:
         return sum(1 for tok in tokens if any(c.isalpha() for c in tok))
 
     @classmethod
+    def _validate_side_pos(
+        cls,
+        text: str,
+        pos_list: Any,
+        sub_text: Any,
+        side_label: str,
+        elem_idx: int,
+        all_intervals: List[Tuple[int, int]],
+        errors: List[str],
+    ) -> None:
+        """Kiểm tra một vế (nom hoặc vi) của một phần tử text_diff."""
+        pos_key = f"{side_label}_pos"
+        sub_key = f"{side_label}_sub_text"
+        if not isinstance(pos_list, list) or not isinstance(sub_text, str):
+            errors.append(f"diff element {elem_idx}: {pos_key} phải là list và {sub_key} phải là str")
+            return
+
+        mask_spans = [(m.start(), m.end()) for m in re.finditer(r"\[MASK\]", text)]
+        actual_parts = []
+        last_end = -1
+        for rng in pos_list:
+            if not (isinstance(rng, list) and len(rng) == 2 and all(type(x) is int for x in rng)):
+                errors.append(f"diff element {elem_idx}: {pos_key} khoảng {rng!r} không hợp lệ")
+                return
+            s, e = rng
+            if not (0 <= s < e <= len(text)):
+                errors.append(
+                    f"diff element {elem_idx}: {pos_key} [{s}, {e}] vượt giới hạn chuỗi (len={len(text)})"
+                )
+                return
+            if s < last_end:
+                errors.append(
+                    f"diff element {elem_idx}: {pos_key} các khoảng không tăng dần/chồng lấn"
+                )
+                return
+            last_end = e
+            if text[s] in PUNCT_CHARS or text[s].isspace():
+                errors.append(
+                    f"diff element {elem_idx}: {pos_key} [{s}, {e}] bắt đầu bằng dấu câu/khoảng trắng: '{text[s]}'"
+                )
+            if text[e - 1] in PUNCT_CHARS or text[e - 1].isspace():
+                errors.append(
+                    f"diff element {elem_idx}: {pos_key} [{s}, {e}] kết thúc bằng dấu câu/khoảng trắng: '{text[e - 1]}'"
+                )
+            if "[MASK]" in text[s:e] or any(s < me and e > ms for ms, me in mask_spans):
+                errors.append(
+                    f"diff element {elem_idx}: {pos_key} [{s}, {e}] không được chứa hoặc chồng lên [MASK]"
+                )
+            all_intervals.append((s, e))
+            actual_parts.append(text[s:e])
+
+        actual_sub = "".join(actual_parts)
+        if actual_sub != sub_text:
+            errors.append(
+                f"diff element {elem_idx}: {sub_key} '{sub_text}' không khớp substring '{actual_sub}'"
+            )
+
+    @classmethod
     def validate_row(cls, row: Dict[str, Any]) -> List[str]:
         """
-        Kiểm tra tính hợp lệ của một hàng dữ liệu theo Rubric v2.1.
+        Kiểm tra tính hợp lệ của một hàng dữ liệu theo Quy định v2.4.
         Trả về danh sách các lỗi nếu có (rỗng nếu hoàn toàn hợp lệ).
         """
         errors = []
         img_id = row.get("img_id", "")
         sentence_id = row.get("sentence_id", "")
-        ch_txt = unicodedata.normalize("NFC", row.get("ch_txt", ""))
-        vi_txt = unicodedata.normalize("NFC", row.get("vi_txt", ""))
+        ch_raw = row.get("ch_txt", "")
+        vi_raw = row.get("vi_txt", "")
+        ch_txt = unicodedata.normalize("NFC", ch_raw)
+        vi_txt = unicodedata.normalize("NFC", vi_raw)
         text_diff = row.get("text_diff")
 
-        # 1. Kiểm tra format sentence_id
+        # 1. Không cho phép hàng rỗng một vế hoặc chứa variation selector
+        if not ch_txt.strip() or not vi_txt.strip():
+            errors.append("ch_txt và vi_txt đều phải khác rỗng (v2.4 cấm hàng khuyết một vế)")
+        if VARIATION_SELECTOR_RE.search(ch_raw):
+            errors.append("ch_txt chứa ký tự chọn dạng Unicode (variation selector U+FE00..U+FE0F/E0100..)")
+
+        # 2. Kiểm tra format sentence_id
         base_img = img_id.replace(".jpg", "").replace(".png", "")
         if not sentence_id.startswith(f"{base_img}."):
             errors.append(f"sentence_id '{sentence_id}' không bắt đầu bằng '{base_img}.'")
 
-        # 2. Kiểm tra text_diff nếu khác None
+        # 3. Kiểm tra text_diff nếu khác None
         if text_diff is not None:
             if not isinstance(text_diff, list):
                 errors.append(f"text_diff phải là list hoặc None (cho null), nhận được {type(text_diff)}")
                 return errors
 
-            all_nom_intervals = []
-            all_vi_intervals = []
+            all_nom_intervals: List[Tuple[int, int]] = []
+            all_vi_intervals: List[Tuple[int, int]] = []
 
             for idx, item in enumerate(text_diff):
                 if not isinstance(item, dict):
@@ -66,42 +135,60 @@ class AlignmentExporter:
                 dtype = item.get("type")
                 if dtype not in ("error", "warn"):
                     errors.append(f"diff element {idx} type '{dtype}' không hợp lệ (phải là 'error' hoặc 'warn')")
+                    continue
+
+                keys = set(item.keys())
+                if dtype == "error":
+                    if keys != ERROR_REQUIRED_KEYS:
+                        errors.append(
+                            f"diff element {idx}: phần tử 'error' phải có đúng các khoá {sorted(ERROR_REQUIRED_KEYS)}, nhận được {sorted(keys)}"
+                        )
+                        if not ERROR_REQUIRED_KEYS <= keys:
+                            continue
+                else:
+                    if not ERROR_REQUIRED_KEYS <= keys or (keys - WARN_ALLOWED_KEYS):
+                        errors.append(
+                            f"diff element {idx}: phần tử 'warn' chứa khoá không hợp lệ: {sorted(keys)}"
+                        )
+                        if not ERROR_REQUIRED_KEYS <= keys:
+                            continue
+                    if "reviewed" in item and (type(item["reviewed"]) is not int or item["reviewed"] not in (0, 1)):
+                        errors.append(
+                            f"diff element {idx}: 'reviewed' phải là số nguyên 0 hoặc 1, nhận được {item['reviewed']!r}"
+                        )
+                    if ("suggest" in item) != ("suggest_by" in item):
+                        errors.append(f"diff element {idx}: 'suggest' và 'suggest_by' phải đi cùng nhau")
+                    if "suggest" in item:
+                        sg = item["suggest"]
+                        if not (isinstance(sg, str) and len(sg) == 1):
+                            errors.append(f"diff element {idx}: 'suggest' phải dài đúng 1 ký tự, nhận được {sg!r}")
+                        if item.get("suggest_by") not in ("fallback", "similar"):
+                            errors.append(
+                                f"diff element {idx}: 'suggest_by' phải là 'fallback' hoặc 'similar', nhận được {item.get('suggest_by')!r}"
+                            )
+                        npos = item.get("nom_pos")
+                        if not (
+                            isinstance(npos, list) and len(npos) == 1
+                            and isinstance(npos[0], list) and len(npos[0]) == 2
+                            and all(type(x) is int for x in npos[0])
+                            and npos[0][1] - npos[0][0] == 1
+                        ):
+                            errors.append(
+                                f"diff element {idx}: phần tử có 'suggest' phải có nom_pos gồm đúng 1 khoảng dài 1"
+                            )
 
                 nom_pos = item.get("nom_pos", [])
                 nom_sub = unicodedata.normalize("NFC", item.get("nom_sub_text", ""))
                 vi_pos = item.get("vi_pos", [])
                 vi_sub = unicodedata.normalize("NFC", item.get("vi_sub_text", ""))
 
-                # Kiểm tra nom_pos và nom_sub
-                actual_nom = "".join(ch_txt[s:e] for s, e in nom_pos)
-                if actual_nom != nom_sub:
-                    errors.append(f"diff element {idx}: nom_sub_text '{nom_sub}' không khớp substring '{actual_nom}'")
+                if not nom_pos and not vi_pos:
+                    errors.append(f"diff element {idx}: cả nom_pos và vi_pos đều rỗng")
 
-                for s, e in nom_pos:
-                    if s >= e:
-                        errors.append(f"diff element {idx}: nom_pos [{s}, {e}] có start >= end")
-                    # Ký tự đầu và cuối không được là khoảng trắng hoặc dấu câu
-                    if s < len(ch_txt) and (ch_txt[s] in PUNCT_CHARS or ch_txt[s].isspace()):
-                        errors.append(f"diff element {idx}: nom_pos [{s}, {e}] bắt đầu bằng dấu câu/khoảng trắng: '{ch_txt[s]}'")
-                    if e - 1 < len(ch_txt) and (ch_txt[e - 1] in PUNCT_CHARS or ch_txt[e - 1].isspace()):
-                        errors.append(f"diff element {idx}: nom_pos [{s}, {e}] kết thúc bằng dấu câu/khoảng trắng: '{ch_txt[e - 1]}'")
-                    all_nom_intervals.append((s, e))
+                cls._validate_side_pos(ch_txt, nom_pos, nom_sub, "nom", idx, all_nom_intervals, errors)
+                cls._validate_side_pos(vi_txt, vi_pos, vi_sub, "vi", idx, all_vi_intervals, errors)
 
-                # Kiểm tra vi_pos và vi_sub
-                actual_vi = "".join(vi_txt[s:e] for s, e in vi_pos)
-                if actual_vi != vi_sub:
-                    errors.append(f"diff element {idx}: vi_sub_text '{vi_sub}' không khớp substring '{actual_vi}'")
-
-                for s, e in vi_pos:
-                    if s >= e:
-                        errors.append(f"diff element {idx}: vi_pos [{s}, {e}] có start >= end")
-                    if s < len(vi_txt) and (vi_txt[s] in PUNCT_CHARS or vi_txt[s].isspace()):
-                        errors.append(f"diff element {idx}: vi_pos [{s}, {e}] bắt đầu bằng dấu câu/khoảng trắng: '{vi_txt[s]}'")
-                    if e - 1 < len(vi_txt) and (vi_txt[e - 1] in PUNCT_CHARS or vi_txt[e - 1].isspace()):
-                        errors.append(f"diff element {idx}: vi_pos [{s}, {e}] kết thúc bằng dấu câu/khoảng trắng: '{vi_txt[e - 1]}'")
-                    all_vi_intervals.append((s, e))
-
-            # Kiểm tra chồng lấn khoảng pos
+            # Kiểm tra chồng lấn khoảng pos giữa các phần tử
             all_nom_intervals.sort()
             for i in range(len(all_nom_intervals) - 1):
                 if all_nom_intervals[i][1] > all_nom_intervals[i + 1][0]:
@@ -177,7 +264,7 @@ class AlignmentExporter:
         if total_scored_nom_chars > 0:
             similarity = max(0.0, (1.0 - (total_unmatched_error_chars / total_scored_nom_chars)) * 100.0)
         else:
-            similarity = 100.0
+            similarity = None
 
         return {
             "total_rows": total_rows,
@@ -189,8 +276,9 @@ class AlignmentExporter:
             "yellow_ratio_percent": round(yellow_ratio, 2),
             "total_scored_nom_chars": total_scored_nom_chars,
             "unmatched_error_chars": total_unmatched_error_chars,
-            "similarity_percent": round(similarity, 2),
-            "is_passing": similarity >= 95.0
+            "similarity_percent": round(similarity, 2) if similarity is not None else None,
+            "evaluation_applicable": total_scored_nom_chars > 0,
+            "is_passing": similarity is not None and similarity >= 95.0
         }
 
     @classmethod
@@ -234,7 +322,7 @@ class AlignmentExporter:
         intervals.sort(key=lambda x: x[0])
         font_black = InlineFont(color=Color(rgb="00000000"))
         font_red = InlineFont(color=Color(rgb="00FF0000"))
-        font_yellow = InlineFont(color=Color(rgb="00B7950B")) # Dark Goldenrod dễ nhìn
+        font_yellow = InlineFont(color=Color(rgb="00D99A00")) # Chuẩn màu vàng v2.4
 
         blocks = []
         curr = 0
@@ -253,14 +341,14 @@ class AlignmentExporter:
     @classmethod
     def export_xlsx(cls, rows: List[Dict[str, Any]], output_path: str):
         """
-        Xuất file <Tên sách>.xlsx với định dạng 3 màu:
-        - Đen: Khớp nghĩa
-        - Đỏ: Sai (error)
-        - Vàng: Cảnh báo / Tên riêng (warn)
+        Xuất file <Tên sách>.xlsx với định dạng 3 màu theo Quy định v2.4:
+        - Đen (000000): Khớp nghĩa
+        - Đỏ (FF0000): Sai (error)
+        - Vàng (D99A00): Cảnh báo / Tên riêng (warn)
         """
         wb = Workbook()
         ws = wb.active
-        ws.title = "Aligned Data"
+        ws.title = "align"
 
         # Định dạng Header
         headers = ["img_id", "sentence_id", "ch_txt", "vi_txt", "text_diff"]

@@ -15,6 +15,7 @@ from src.preprocessor.image.image_mapper import ImageMapper
 from src.ocr.runner import run_ocr_pipeline
 from src.aligner.book_aligner import BookAligner
 from scripts.package_submission import package_submission
+from scripts.run_official_align import run_hybrid_alignment
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("pipeline")
@@ -43,6 +44,14 @@ def main():
     parser.add_argument("--method", type=str, default="nlp",
                         choices=["baseline", "nlp"],
                         help="Phương pháp xử lý: baseline (v0 luật thô) hoặc nlp (v1 mô hình thống kê & hư từ)")
+    parser.add_argument("--aligner", type=str, default="hybrid",
+                        choices=["hybrid", "internal"],
+                        help="Bộ dóng hàng: hybrid (BookAligner DP + ocr-nom-align chuẩn v2.4) hoặc internal")
+    parser.add_argument("--mode", type=str, default="phonetic",
+                        choices=["phonetic", "meaning"],
+                        help="Loại bản dịch theo Quy định v2.4: phonetic (dịch âm 1-1) hoặc meaning (dịch nghĩa)")
+    parser.add_argument("--offline", action=argparse.BooleanOptionalAction, default=True,
+                        help="Tắt tra từ điển trực tuyến hvdic trong ocr-nom-align (mặc định: bật offline)")
     parser.add_argument("--dpi", type=int, default=300, help="DPI trích xuất ảnh từ PDF (chuẩn 300)")
     parser.add_argument("--first-page", type=int, default=None, help="Trang bắt đầu trích xuất")
     parser.add_argument("--last-page", type=int, default=None, help="Trang kết thúc trích xuất")
@@ -125,14 +134,32 @@ def main():
 
     # Giai đoạn 4: Ghép câu xuyên trang, Dóng hàng DP & Xuất CSV/Excel
     if args.stage in ("all", "align"):
-        logger.info(f"[Giai đoạn 4] Ghép câu xuyên trang và dóng hàng Phonetic DP (Method: {args.method.upper()})...")
-        aligner = BookAligner(method=args.method)
-        res = aligner.align_book(
-            book_dir=str(processed_dir),
-            book_name=book_name
+        logger.info(
+            f"[Giai đoạn 4] Ghép câu xuyên trang và dóng hàng (Aligner: {args.aligner.upper()}, Method: {args.method.upper()}, Mode: {args.mode})..."
         )
-        logger.info(f"  -> Dóng hàng hoàn tất: {res['aligned_rows_count']} câu.")
-        logger.info(f"  -> Độ tương đồng: {res['metrics']['similarity_percent']}%")
+        if args.aligner == "hybrid":
+            res = run_hybrid_alignment(
+                book_dir=processed_dir,
+                book_name=book_name,
+                out_dir=processed_dir,
+                mode=args.mode,
+                method=args.method,
+                offline=args.offline,
+            )
+            logger.info(f"  -> Dóng hàng hoàn tất: {res['aligned_rows_count']} câu.")
+            logger.info(f"  -> Độ tương đồng (ocr-nom-align): {res['score']['similarity']}%")
+            if res["check_diff_exit_code"] != 0:
+                logger.warning(
+                    "  -> check-diff --final trả về mã lỗi != 0: kiểm tra lại box tiêu đề/lề ngoài khung trong Label.txt hoặc các lỗi chưa xử lý."
+                )
+        else:
+            aligner = BookAligner(method=args.method)
+            res = aligner.align_book(
+                book_dir=str(processed_dir),
+                book_name=book_name
+            )
+            logger.info(f"  -> Dóng hàng hoàn tất: {res['aligned_rows_count']} câu.")
+            logger.info(f"  -> Độ tương đồng: {res['metrics']['similarity_percent']}%")
 
     # Giai đoạn 5: Đóng gói và kiểm tra nộp bài
     if args.stage in ("all", "package"):

@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=77"]  # >=77 required: SPDX-string `project.license` (PEP 639)
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ocr-nom-align"
+version = "0.2.0"
+description = "Aligns Sino-Nom sentences with their Vietnamese reading by Levenshtein distance and writes the book CSV/XLSX with text_diff"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "CC-BY-NC-SA-4.0"
+authors = [{ name = "obj-see" }]
+dependencies = [
+    "click==8.5.1",
+    "openpyxl==3.1.5",  # the coloured .xlsx and its check; the CSV needs only the standard library
+]
+
+[project.urls]
+Homepage = "https://github.com/obj-see/ocr-nom-align"
+Repository = "https://github.com/obj-see/ocr-nom-align"
+Issues = "https://github.com/obj-see/ocr-nom-align/issues"
+
+[project.scripts]
+ocr-nom-align = "ocr_nom_align.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest==9.2.0"]
+lint = ["ruff==0.17.5"]
+
+[dependency-groups]
+# Installed by default by `uv run` / `uv sync`. The `test` and `lint` extras stay for pip users.
+dev = ["pytest==9.2.0", "ruff==0.17.5"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ocr_nom_align = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]  # tests import shared helpers as `from tests.helpers import ...`
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+ignore = ["E501"]
+select = ["E", "F", "I", "UP", "B", "A", "N", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["N802"]  # test_* names
+# Colab notebooks install in one cell and import in the next: E402 is inherent.
+"*.ipynb" = ["E402", "E702"]
+
+[tool.ruff.format]
+# Notebooks hold IPython magics (`!cmd`) and long one-line probes; they are not auto-formatted.
+exclude = ["*.ipynb"]
+quote-style = "double"

@@ -1,0 +1,44 @@
+
+# Distribution / packaging
+# IDEs
+# Linting & Formatting
+# Local work and secrets
+# Logs
+# OS files
+# Python
+# Testing
+# Virtual environments
+# uv
+*$py.class
+*.egg-info/
+*.log
+*.py[cod]
+*.so
+*.swo
+*.swp
+*~
+.DS_Store
+.Python
+.coverage
+.coverage.*
+.eggs/
+.env
+.idea/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.uv/
+.venv/
+.vscode/
+ENV/
+Thumbs.db
+__pycache__/
+build/
+dist/
+env/
+htmlcov/
+ocr_out/
+ocr_work/
+venv/
+
+data/

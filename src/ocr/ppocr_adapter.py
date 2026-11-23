@@ -1,5 +1,9 @@
 import json
+import re
+import unicodedata
 from typing import List, Dict, Any, Tuple
+
+VARIATION_SELECTOR_RE = re.compile(r"[\uFE00-\uFE0F\U000E0100-\U000E01EF]")
 
 class PPOCRAdapter:
     """
@@ -122,7 +126,60 @@ class PPOCRAdapter:
             return sorted_boxes
 
     @staticmethod
-    def format_label_entry(folder_name: str, image_name: str, boxes: List[Dict[str, Any]], script_type: str = "ch") -> str:
+    def clean_transcription(text: str) -> str:
+        """Chuẩn hóa NFC, xóa ký tự chọn dạng Unicode (variation selector) và cắt khoảng trắng thừa."""
+        if not text:
+            return ""
+        cleaned = unicodedata.normalize("NFC", str(text))
+        cleaned = VARIATION_SELECTOR_RE.sub("", cleaned)
+        return cleaned.strip()
+
+    @staticmethod
+    def split_boxes_to_chars(boxes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Tách các bounding box cả cột Hán Nôm thành các bounding box từng chữ riêng biệt
+        phục vụ xuất file Label_char.txt theo Quy định v2.4:
+        - Mỗi box đúng 1 ký tự (không chứa khoảng trắng), riêng [MASK] giữ nguyên 1 box.
+        - Bảo toàn đúng thứ tự đọc của từng cột đầu vào.
+        """
+        char_boxes = []
+        for b in boxes:
+            pts = PPOCRAdapter.ensure_4_points(b.get("points", []))
+            text = PPOCRAdapter.clean_transcription(b.get("transcription", ""))
+            if not text:
+                continue
+
+            tokens = re.findall(r"\[MASK\]|\S", text)
+            if not tokens:
+                continue
+
+            x1 = min(p[0] for p in pts)
+            x2 = max(p[0] for p in pts)
+            y1 = min(p[1] for p in pts)
+            y2 = max(p[1] for p in pts)
+            k = len(tokens)
+            char_h = (y2 - y1) / float(k)
+
+            for i, tok in enumerate(tokens):
+                cy1 = int(y1 + i * char_h)
+                cy2 = int(y1 + (i + 1) * char_h)
+                box_dict: Dict[str, Any] = {
+                    "transcription": tok,
+                    "points": [[x1, cy1], [x2, cy1], [x2, cy2], [x1, cy2]],
+                }
+                if "difficult" in b:
+                    box_dict["difficult"] = bool(b["difficult"])
+                char_boxes.append(box_dict)
+        return char_boxes
+
+    @staticmethod
+    def format_label_entry(
+        folder_name: str,
+        image_name: str,
+        boxes: List[Dict[str, Any]],
+        script_type: str = "ch",
+        preserve_order: bool = False,
+    ) -> str:
         """
         Sinh một dòng dữ liệu cho Label.txt:
         <folderName>/<imageName>\t[{"transcription":"...", "points":[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]}]
@@ -131,7 +188,7 @@ class PPOCRAdapter:
         normalized_boxes = []
 
         for b in boxes:
-            trans = str(b.get("transcription", "")).strip()
+            trans = PPOCRAdapter.clean_transcription(b.get("transcription", ""))
             pts = PPOCRAdapter.ensure_4_points(b.get("points", []))
             
             box_dict: Dict[str, Any] = {
@@ -143,9 +200,13 @@ class PPOCRAdapter:
 
             normalized_boxes.append(box_dict)
 
-        # Sắp xếp theo thứ tự đọc
-        sorted_boxes = PPOCRAdapter.sort_boxes_reading_order(normalized_boxes, script_type=script_type)
-        json_str = json.dumps(sorted_boxes, ensure_ascii=False)
+        # Sắp xếp theo thứ tự đọc trừ khi bên gọi đã sắp xếp sẵn (vd Label_char.txt)
+        ordered_boxes = (
+            normalized_boxes
+            if preserve_order
+            else PPOCRAdapter.sort_boxes_reading_order(normalized_boxes, script_type=script_type)
+        )
+        json_str = json.dumps(ordered_boxes, ensure_ascii=False)
         return f"{rel_path}\t{json_str}\n"
 
     @staticmethod
