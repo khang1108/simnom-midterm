@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
+from scripts.build_placeholder_map import write as write_placeholder_map
 from src.aligner.book_aligner import BookAligner
 
 DEFAULT_READING_TABLES = [
@@ -84,7 +85,9 @@ def run_hybrid_alignment(
     )
     pairs = projected["pairs"]
 
-    pairs_csv = out_dir / f"{book_name}_pairs.csv"
+    extras_dir = out_dir.parent / "_extras" / book_name
+    extras_dir.mkdir(parents=True, exist_ok=True)
+    pairs_csv = extras_dir / f"{book_name}_pairs.csv"
     with pairs_csv.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["img_id", "sentence_id", "ch_txt", "vi_txt"])
         writer.writeheader()
@@ -95,7 +98,7 @@ def run_hybrid_alignment(
     # Bước 2: Chạy công cụ chuẩn ocr-nom-align diff
     out_csv = out_dir / f"{book_name}.csv"
     out_xlsx = out_dir / f"{book_name}.xlsx"
-    out_report = out_dir / f"{book_name}_align_report.json"
+    out_report = extras_dir / f"{book_name}_align_report.json"
 
     diff_cmd = [
         sys.executable, "-m", "ocr_nom_align", "diff",
@@ -133,6 +136,9 @@ def run_hybrid_alignment(
             w.writerows([r[c] for c in COLUMNS] for r in rows)
         _run_cli([sys.executable, "-m", "ocr_nom_align", "render", str(out_csv), "--xlsx", str(out_xlsx)], check=True)
         print(f"[Hybrid Align] {len(predicted)} trang mất bản Quốc ngữ: âm dự đoán, tô vàng toàn hàng.")
+
+    n_ph = write_placeholder_map(out_dir, book_name)
+    print(f"[Hybrid Align] placeholder_map: {n_ph} ký tự 〓")
 
     # Bước 3: Kiểm tra cấu trúc CSV + XLSX (`check`)
     print(f"[Hybrid Align] Đang chạy ocr-nom-align check...")

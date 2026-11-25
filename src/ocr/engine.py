@@ -3,6 +3,7 @@ import time
 import json
 import base64
 import hashlib
+import shutil
 import sqlite3
 import subprocess
 import requests
@@ -280,7 +281,7 @@ class OCREngine:
         img = cv2.imread(str(image_path))
         if img is None:
             raise ValueError(f"Cannot read image: {image_path}")
-        if script == "vi":
+        if script == "vi" and shutil.which("tesseract"):
             base = self._ocr_tesseract(image_path)
         else:
             base = [{"transcription": "", "points": p} for p in self._detect_line_boxes_opencv(image_path, script=script)]

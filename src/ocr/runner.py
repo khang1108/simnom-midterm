@@ -146,6 +146,8 @@ def run_ocr_pipeline(
 
     # 1. Chạy vi/ (Quốc ngữ)
     process_folder(vi_dir, script_type="vi", ocr_engine=engine, dry_run=dry_run)
+    for extra in ("intro", "ref", "toc"):
+        process_folder(book_dir / extra, script_type="vi", ocr_engine=engine, dry_run=dry_run)
 
     # 2. Chạy ch/ (Hán Nôm)
     process_folder(ch_dir, script_type="ch", ocr_engine=engine, dry_run=dry_run)

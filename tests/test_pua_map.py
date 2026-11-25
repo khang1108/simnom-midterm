@@ -3,7 +3,7 @@ from src.ocr.runner import GLYPH_FIX_FILE, load_pua_map
 
 def test_pua_map_translates_kim_private_chars():
     m = load_pua_map()
-    assert "\U000f070b\U000f000b".translate(m) == "没冊"
+    assert "\U000f070b\U000f000b\U000f047c\U000f0815".translate(m) == "\U0003197a\U000313fa\U00031eb5〓"
     assert all(0xF0000 <= k <= 0xFFFFD or 0xE000 <= k <= 0xF8FF for k in m)
 
 

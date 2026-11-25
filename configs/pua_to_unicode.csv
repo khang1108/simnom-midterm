@@ -1,7 +1,26 @@
-pua,unicode,char,reading,ids
-U+F07EF,U+7F95,羕,dường,⿱𦍌永
-U+F07BA,U+6E7C,湼,nết,⿰氵𬛸
-U+F000B,U+518A,冊,sách,⿻𦉫一
-U+F082E,U+28DEF,𨷯,cửa,⿵門舉
-U+F02C7,U+201CD,𠇍,mấy,⿱人㣺
-U+F070B,U+6CA1,没,một,⿰氵殳
+pua,unicode,char,reading,ids,source
+U+F000B,U+313FA,𱏺,sách,,Unihan kIRG_VSource
+U+F0012,U+31E1D,𱸝,bụi,,Unihan kIRG_VSource
+U+F0087,U+314A2,𱒢,ví,,Unihan kIRG_VSource
+U+F0152,U+2B8A9,𫢩,nay,⿰尼今,IDS ⿰尼今
+U+F01CF,U+317CE,𱟎,run,,Unihan kIRG_VSource
+U+F0272,U+318AD,𱢭,sớm,,Unihan kIRG_VSource
+U+F027A,U+2330B,𣌋,sớm,⿱日歛,IDS ⿱日歛
+U+F0284,U+318BB,𱢻,gió,,Unihan kIRG_VSource
+U+F02C7,U+3196F,𱥯,mấy,,Unihan kIRG_VSource
+U+F02EB,U+6EC8,滈,khao,⿰氵高,IDS ⿰氵高
+U+F030E,U+31AB5,𱪵,lô,,Unihan kIRG_VSource
+U+F03D9,U+2B005,𫀅,xem,⿰礻占,IDS ⿰礻占
+U+F047C,U+31EB5,𱺵,là,,Unihan kIRG_VSource
+U+F0607,U+32233,𲈳,cửa,,Unihan kIRG_VSource
+U+F061A,U+29218,𩈘,mặt,⿰末面,IDS ⿰末面
+U+F070B,U+3197A,𱥺,một,,Unihan kIRG_VSource
+U+F0742,U+641B,搛,đem,⿰扌兼,IDS ⿰扌兼
+U+F07BA,U+6E7C,湼,nết,⿰氵𬛸,IDS ⿰氵𬛸
+U+F07EF,U+31ECC,𱻌,dường,,Unihan kIRG_VSource
+U+F07F1,U+26806,𦠆,rốn,⿰月巽,IDS ⿰月巽
+U+F0810,U+54A4,咤,đơn,⿰口宅,IDS ⿰口宅
+U+F0815,U+3013,〓,lớn,⿱𥫗頓,không có trong Unicode (⿱𥫗頓): 〓 + placeholder_map
+U+F082E,U+3222B,𲈫,cửa,,Unihan kIRG_VSource
+U+F0833,U+313EB,𱏫,đâu,,Unihan kIRG_VSource
+U+F0887,U+7616,瘖,ốm,⿸疒音,IDS ⿸疒音

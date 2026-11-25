@@ -186,6 +186,16 @@ def validate_book_config(cfg: Dict[str, Any]) -> Dict[str, List[int]]:
     return folder_pages
 
 
+def write_updated_pdf(book_dir: Path, book_name: str) -> Path:
+    imgs = {p.name: p for sub in (*PRIMARY_FOLDERS, "missing/vi") for p in (book_dir / sub).glob("*.jpg")}
+    first, *rest = [Image.open(imgs[n]) for n in sorted(imgs, key=lambda n: int(n.rsplit(".", 2)[1].split("_")[0]))]
+    out = book_dir / f"{book_name}_updated.pdf"
+    tmp = out.with_suffix(".tmp.pdf")
+    first.save(tmp, save_all=True, append_images=rest, resolution=72.0, quality=95)
+    tmp.replace(out)
+    return out
+
+
 def clean_book_dir(book_dir: Path) -> None:
     """Dọn các thư mục phân trang và file map/updated cũ bên trong book_dir trước khi cắt mới."""
     if not book_dir.exists():
@@ -345,6 +355,10 @@ def prepare_book(
 
     for p in cfg.get("rotate_180", []):
         rotate_180(book_dir / page_to_primary[int(p)] / format_page_filename(book_name, int(p), actual_pages))
+
+    shutil.copy2(source_pdf, book_dir / f"{book_name}.pdf")
+    if qpdf_spec or cfg.get("rotate_180"):
+        updated_pdf_path = write_updated_pdf(book_dir, book_name)
 
     # Xuất <Tên sách>_image_map.json
     pairs = build_image_map_pairs(book_name, cfg["pair_segments"], actual_pages)

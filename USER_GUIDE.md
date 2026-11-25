@@ -1,6 +1,6 @@
 # HƯỚNG DẪN VẬN HÀNH TOÀN BỘ QUY TRÌNH (USER GUIDE)
 **Dự án:** Xây dựng Ngữ liệu Song ngữ Hán Nôm – Quốc ngữ Tự động  
-**Quy chuẩn áp dụng:** Quy_định_đồ_án_v2.4.pdf  
+**Quy chuẩn áp dụng:** Quy_định_đồ_án_v2.6.pdf  
 **Nhóm thực hiện:**
 - Nguyễn Phúc Khang (MSSV: 24120068 - Trưởng nhóm)
 - Phạm Minh Trọng (MSSV: 24120151)
@@ -9,12 +9,18 @@
 ---
 
 ## 1. Môi Trường Vận Hành (Tested Environment)
-Dự án đã được triển khai, kiểm thử và chạy thực nghiệm trên môi trường tiêu chuẩn sau:
-- **Hệ điều hành (OS):** Linux Ubuntu 24.04 LTS (x86_64) / Kernel 6.8
-- **Phiên bản Python:** Python 3.14.8 (Tương thích tốt từ Python >= 3.10)
-- **Bộ nhớ RAM:** Tối thiểu 8 GB (Khuyến nghị 16 GB khi xử lý file PDF scan 600+ trang)
-- **Ổ cứng:** Tối thiểu 5 GB dung lượng trống để chứa PDF gốc, ảnh trích xuất và cơ sở dữ liệu từ điển.
-- **Card đồ họa (GPU):** Không bắt buộc (Toàn bộ pipeline chạy trên CPU với kiến trúc tối ưu microsecond B-Tree và API song song).
+Dữ liệu nộp được tạo trên hai máy:
+
+| | Máy chạy pipeline (OCR, ROVER, dóng hàng, `_updated.pdf`) | Máy phát triển (sửa code, chạy test, đóng gói) |
+|---|---|---|
+| Hệ điều hành | Ubuntu 24.04.3 LTS (x86_64) | Arch Linux (x86_64), kernel 7.2 |
+| CPU / RAM | 128 luồng / 2 TB | Intel Core i7-8750H (12 luồng) / 15 GB |
+| GPU | NVIDIA A100-SXM4-80GB (1 card, chạy vLLM 0.34.0 phục vụ Qwen3-VL-8B-Instruct) | Không có |
+| Python | 3.12.16 | 3.14.8 |
+
+- Pipeline chạy được với Python >= 3.10. Bước OCR Quốc ngữ cần GPU NVIDIA đủ VRAM cho Qwen3-VL-8B-Instruct qua vLLM; các bước còn lại chạy trên CPU.
+- Ổ cứng cần tối thiểu 5 GB trống cho PDF gốc, ảnh trích xuất, từ điển và hai file `_updated.pdf` (khoảng 170 MB mỗi tập).
+- Nếu máy không có `tesseract`, khung dòng Quốc ngữ được phát hiện bằng OpenCV.
 
 ---
 
@@ -66,23 +72,42 @@ Hệ thống hỗ trợ 2 động cơ OCR:
   - Tiết kiệm 50% số lượng request, nâng tối đa công suất xử lý lên tới 200 trang/ngày theo hạn ngạch.
   - Tích hợp bộ nhớ đệm SQLite (`data/ocr_cache.db`), không bao giờ gọi lại API cho các trang đã nhận dạng.
 
-### B. Động cơ Quốc ngữ (OpenAI Vision API / Offline Tesseract)
-- **Tùy chọn 1 (Offline hoàn toàn, Miễn phí):** Mặc định hệ thống sử dụng Tesseract với dữ liệu ngôn ngữ tiếng Việt `vie.traineddata` (đã lưu sẵn tại `data/tessdata/vie.traineddata`).
-- **Tùy chọn 2 (OpenAI-compatible Vision API):** Nếu muốn sử dụng các mô hình thị giác cao cấp (GPT-4o, Claude, Qwen-VL):
-  Tạo file `configs/openai_config.json`:
-  ```json
-  {
-    "api_key": "sk-your-openai-or-openrouter-key",
-    "base_url": "https://api.openai.com/v1",
-    "model": "gpt-4o-mini"
-  }
-  ```
+### B. Động cơ Quốc ngữ (Qwen3-VL-8B-Instruct qua vLLM, Tesseract làm box dòng)
+Quốc ngữ được đọc bằng mô hình thị giác mở **Qwen/Qwen3-VL-8B-Instruct** (miễn phí, chạy trên GPU riêng, giao tiếp kiểu OpenAI `/v1/chat/completions`). Tesseract (`data/tessdata/vie.traineddata`) chỉ dùng để tìm box từng dòng; mỗi dòng được cắt ra, phóng lên tối thiểu 48 px chiều cao và gửi cho Qwen với `temperature=0`, `max_tokens=200`. Dòng Qwen trả rỗng thì giữ chữ Tesseract.
+
+Khởi động server mô hình (GPU ≥ 24 GB, vLLM đã cài trong một venv riêng):
+```bash
+CUDA_VISIBLE_DEVICES=0 vllm serve Qwen/Qwen3-VL-8B-Instruct --port 8120 \
+    --max-model-len 8192 --gpu-memory-utilization 0.85 --limit-mm-per-prompt '{"image":1}'
+```
+Nếu GPU ở máy khác, mở tunnel: `ssh -N -L 8120:localhost:8120 <máy-gpu>`.
+
+Prompt đã dùng (`src/ocr/engine.py`, `OCREngine.VLM_PROMPTS`):
+- `vi` (lượt chính, 48 px):
+  > Chép lại CHÍNH XÁC dòng chữ tiếng Việt trong ảnh (sách Công giáo in đầu thế kỷ 20). Giữ nguyên chính tả cổ, dấu thanh, dấu gạch nối và dấu câu như trong ảnh; không sửa, không thêm. Chỉ trả về đúng dòng chữ đó.
+- `vi_strict` (lượt phụ, phóng 96 px, dùng cho ROVER):
+  > Chép lại CHÍNH XÁC dòng chữ tiếng Việt trong ảnh (sách Công giáo in đầu thế kỷ 20). Nhìn kỹ từng chữ: phân biệt đ (có gạch ngang) với d, và các dấu ă, â, ê, ô, ơ, ư cùng dấu thanh. Giữ nguyên chính tả cổ, dấu gạch nối và dấu câu như trong ảnh; không sửa, không thêm. Chỉ trả về đúng dòng chữ đó.
+
+**ROVER (voting 3 bản OCR):** với mỗi từ, nếu bản Qwen không phải âm đọc của chữ Nôm nào trên trang đối ứng mà bản Tesseract hoặc bản Qwen 96 px là âm đọc đó, thì lấy bản phụ (`reconcile_vi_with_nom` trong `src/ocr/runner.py`). Kết quả 3 bản được lưu trong cache với khóa `vi`, `vi_tess`, `vi_vlm96`.
+
+Truyền thông số cho bước OCR bằng tham số dòng lệnh (`--openai-key EMPTY --openai-base-url http://localhost:8120/v1 --openai-model Qwen/Qwen3-VL-8B-Instruct`) hoặc file `configs/openai_config.json` (cùng ba trường `api_key`, `base_url`, `model`). vLLM không kiểm tra key nên dùng `EMPTY`.
 
 ---
 
 ## 4. Thực Thi Quy Trình Tự Động (Execution Guide)
 
-Hệ thống được điều phối qua một CLI duy nhất: `scripts/run_pipeline.py`.
+### Lệnh đã chạy để tạo dữ liệu nộp (lặp cho Tập 1 và Tập 2)
+```bash
+B="data/processed/T1_Sách Dạy Đấng Làm Người Sửa Mình (Tập 2)"
+python scripts/prepare_books.py
+python -m src.ocr.runner --book-dir "$B" --token "$(cat configs/kim_token.txt)" \
+    --openai-key EMPTY --openai-base-url http://localhost:8120/v1 --openai-model Qwen/Qwen3-VL-8B-Instruct
+python scripts/run_official_align.py --book-dir "$B" --out-dir "$B"
+```
+- `prepare_books.py`: cắt ảnh theo `configs/books_structure.json`, xoay các trang scan ngược (`rotate_180`), ghép lại các trang Nôm đặt sai chỗ (`pair_segments`), chép PDF gốc thành `<Tên sách>.pdf` và ghép `<Tên sách>_updated.pdf` từ ảnh đã nộp, tạo `_image_map.json`.
+- `src.ocr.runner`: OCR `ch/` (Kim Hán Nôm), `vi/`, `intro/`, `ref/`, `toc/` (Qwen3-VL), đổi ký tự riêng PUA của Kim sang Unicode chuẩn theo `configs/pua_to_unicode.csv` (Unihan `kIRG_VSource` hoặc đối chiếu IDS; chữ chưa có trong Unicode ghi `〓`), sửa chữ Kim nhận nhầm hình theo `configs/kim_glyph_fix.csv`, rồi chạy ROVER.
+- `run_official_align.py`: dóng hàng, tính `text_diff`, xuất `.csv`, `.xlsx`, `_placeholder_map.json` (khi có `〓`, tự kiểm 7 điều kiện của Quy định v2.6), chạy `check`, `check-diff --final`, `score`. File trung gian `_pairs.csv`, `_align_report.json` ghi vào `data/processed/_extras/<Tên sách>/` (đưa vào `extras.zip`).
+- Mọi kết quả OCR được cache trong `data/ocr_cache.db`; chạy lại không gọi lại API hay mô hình.
 
 ### Cách 1: Chạy toàn bộ quy trình tự động (End-to-End)
 ```bash
