@@ -1,6 +1,6 @@
 # HƯỚNG DẪN VẬN HÀNH TOÀN BỘ QUY TRÌNH (USER GUIDE)
 **Dự án:** Xây dựng Ngữ liệu Song ngữ Hán Nôm – Quốc ngữ Tự động  
-**Quy chuẩn áp dụng:** [Rules] - v2.1.pdf  
+**Quy chuẩn áp dụng:** Quy_định_đồ_án_v2.4.pdf  
 **Nhóm thực hiện:**
 - Nguyễn Phúc Khang (MSSV: 24120068 - Trưởng nhóm)
 - Phạm Minh Trọng (MSSV: 24120151)
@@ -13,7 +13,7 @@ Dự án đã được triển khai, kiểm thử và chạy thực nghiệm tr�
 - **Hệ điều hành (OS):** Linux Ubuntu 24.04 LTS (x86_64) / Kernel 6.8
 - **Phiên bản Python:** Python 3.14.8 (Tương thích tốt từ Python >= 3.10)
 - **Bộ nhớ RAM:** Tối thiểu 8 GB (Khuyến nghị 16 GB khi xử lý file PDF scan 600+ trang)
-- **Ổ cứng:** Tối thiểu 5 GB dung lượng trống để chứa ảnh trích xuất 300 DPI và cơ sở dữ liệu từ điển.
+- **Ổ cứng:** Tối thiểu 5 GB dung lượng trống để chứa PDF gốc, ảnh trích xuất và cơ sở dữ liệu từ điển.
 - **Card đồ họa (GPU):** Không bắt buộc (Toàn bộ pipeline chạy trên CPU với kiến trúc tối ưu microsecond B-Tree và API song song).
 
 ---
@@ -24,9 +24,9 @@ Dự án đã được triển khai, kiểm thử và chạy thực nghiệm tr�
 Mở Terminal trên máy Ubuntu/Debian và thực hiện:
 ```bash
 sudo apt-get update
-sudo apt-get install -y git poppler-utils tesseract-ocr tesseract-ocr-vie
+sudo apt-get install -y git poppler-utils qpdf tesseract-ocr tesseract-ocr-vie
 ```
-*(Ghi chú: `poppler-utils` cung cấp `pdftoppm` phục vụ trích xuất ảnh chuẩn ấn bản 300 DPI; `tesseract-ocr` phục vụ nhận dạng offline Quốc ngữ nếu không sử dụng API).*
+*(Ghi chú: `poppler-utils` cung cấp `pdftoppm` để cắt ảnh (72 DPI ≈ độ phân giải gốc); `qpdf` tạo `_updated.pdf` khi loại trang trùng; `tesseract-ocr` phục vụ nhận dạng offline Quốc ngữ nếu không sử dụng API).*
 
 ### Bước 2.2: Tạo môi trường ảo và cài đặt thư viện Python
 ```bash
@@ -110,8 +110,8 @@ python3 scripts/run_pipeline.py \
     --stage slice
 ```
 *Kết quả:*
-- Các trang được phân loại chính xác vào `data/processed/<Tên sách>/ch/`, `vi/`, `blank/`.
-- File ánh xạ hình ảnh `<Tên sách>_image_map.json` tuân thủ đúng quy tắc đọc ngược của layout T1 (ví dụ: `vi.001` ánh xạ tới `ch.636`).
+- Các trang được phân loại chính xác vào `data/processed/<Tên sách>/` theo khoảng trang khai báo trong `configs/books_structure.json` (`ch`, `vi`, `intro`, `ref`, `toc`, `blank`, `misc`, `missing/ch`).
+- File ánh xạ hình ảnh `<Tên sách>_image_map.json` tuân thủ đúng quy tắc đọc ngược của layout T1 (ví dụ Tập 1: `vi.011` ánh xạ tới `ch.624`).
 
 #### Giai đoạn 2: Nhận diện OCR
 ```bash
@@ -134,7 +134,7 @@ python3 scripts/run_pipeline.py \
 - Dóng hàng ngữ âm từng câu Nôm với Quốc ngữ, tính toán `text_diff` với toạ độ Unicode chuẩn xác.
 - Xuất file `<Tên sách>.csv` (UTF-8 with BOM).
 - Xuất file `<Tên sách>.xlsx` với màu sắc trực quan (Đen = Khớp, Đỏ = `error`, Vàng = `warn`).
-- In bảng tổng kết độ tương đồng (%) theo đúng công thức Rubric v2.1.
+- In bảng tổng kết độ tương đồng (%) theo đúng công thức Quy định v2.4.
 
 #### Giai đoạn 4: Đóng gói bài nộp chuẩn Rubric
 ```bash

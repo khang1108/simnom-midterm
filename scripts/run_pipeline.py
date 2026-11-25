@@ -8,10 +8,7 @@ from pathlib import Path
 # Đảm bảo root workspace có trong sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from typing import Dict, List
-from src.preprocessor.pdf_slicer import PDFSlicer
-from src.preprocessor.image.image_classifier import ImageClassifier
-from src.preprocessor.image.image_mapper import ImageMapper
+from scripts.prepare_books import prepare_book
 from src.ocr.runner import run_ocr_pipeline
 from src.aligner.book_aligner import BookAligner
 from scripts.package_submission import package_submission
@@ -19,20 +16,6 @@ from scripts.run_official_align import run_hybrid_alignment
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("pipeline")
-
-def parse_range(range_str: str) -> List[int]:
-    """Parse chuỗi '1-5,7,10-12' thành list các số nguyên."""
-    result = []
-    if not range_str:
-        return result
-    for p in range_str.split(","):
-        p = p.strip()
-        if "-" in p:
-            start, end = map(int, p.split("-"))
-            result.extend(range(start, end + 1))
-        elif p.isdigit():
-            result.append(int(p))
-    return sorted(list(set(result)))
 
 def main():
     parser = argparse.ArgumentParser(description="End-to-End Automated Sino-Nom Parallel Corpus Pipeline.")
@@ -52,16 +35,10 @@ def main():
                         help="Loại bản dịch theo Quy định v2.4: phonetic (dịch âm 1-1) hoặc meaning (dịch nghĩa)")
     parser.add_argument("--offline", action=argparse.BooleanOptionalAction, default=True,
                         help="Tắt tra từ điển trực tuyến hvdic trong ocr-nom-align (mặc định: bật offline)")
-    parser.add_argument("--dpi", type=int, default=300, help="DPI trích xuất ảnh từ PDF (chuẩn 300)")
-    parser.add_argument("--first-page", type=int, default=None, help="Trang bắt đầu trích xuất")
-    parser.add_argument("--last-page", type=int, default=None, help="Trang kết thúc trích xuất")
-    
-    # Cấu hình phân trang cho T1 Sách Dạy Đấng Làm Người Sửa Mình (Tập 1): 1-318 vi, 319-636 ch
-    parser.add_argument("--vi-pages", type=str, default="1-318", help="Dải trang Quốc ngữ")
-    parser.add_argument("--ch-pages", type=str, default="319-634", help="Dải trang Hán Nôm")
-    parser.add_argument("--blank-pages", type=str, default="635-636", help="Dải trang trắng")
-    parser.add_argument("--layout", type=str, default="T1", choices=["T1", "T2", "T2b"], help="Layout quy định")
-    
+    parser.add_argument("--dpi", type=int, default=72, help="DPI cắt ảnh (72 DPI ~ độ phân giải ảnh gốc trong PDF)")
+    parser.add_argument("--config", type=str, default="configs/books_structure.json",
+                        help="File cấu hình phân trang / ghép cặp trang của từng tập")
+
     # OCR Credentials
     parser.add_argument("--token-file", type=str, default="configs/kim_token.txt", help="File chứa token Kim Hán Nôm")
     parser.add_argument("--openai-key", type=str, default=None, help="API Key OpenAI-compatible (tuỳ chọn)")
@@ -78,43 +55,21 @@ def main():
 
     book_name = args.book_name or pdf_path.stem
     processed_dir = Path("data/processed") / book_name
-    raw_slice_dir = processed_dir / "_raw_slices"
-    processed_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("=" * 60)
     logger.info(f"KHỞI ĐỘNG PIPELINE CHO SÁCH: {book_name}")
     logger.info(f"GIAI ĐOẠN: {args.stage.upper()}")
     logger.info("=" * 60)
 
-    # Giai đoạn 1: Slicing PDF
-    if args.stage in ("all", "slice"):
-        logger.info(f"[Giai đoạn 1] Cắt PDF sang ảnh 300 DPI...")
-        slicer = PDFSlicer(dpi=args.dpi)
-        images = slicer.slice_pdf(
-            pdf_path=pdf_path,
-            output_dir=raw_slice_dir,
-            book_name=book_name,
-            first_page=args.first_page,
-            last_page=args.last_page
-        )
-        logger.info(f"  -> Đã cắt {len(images)} trang ảnh.")
-
-    # Giai đoạn 2: Phân loại thư mục & Sinh image_map.json
-    if args.stage in ("all", "classify", "slice"):
-        logger.info(f"[Giai đoạn 2] Phân loại thư mục ch/, vi/, blank/ và sinh image_map...")
-        rules = {
-            "vi": parse_range(args.vi_pages),
-            "ch": parse_range(args.ch_pages),
-            "blank": parse_range(args.blank_pages)
-        }
-        classifier = ImageClassifier(rules=rules)
-        counts = classifier.classify(source_dir=raw_slice_dir, target_root=processed_dir)
-        logger.info(f"  -> Kết quả phân loại: {counts}")
-
-        # Sinh image_map
-        mapper = ImageMapper(layout=args.layout)
-        map_path = mapper.generate_map(target_root=processed_dir, book_name=book_name)
-        logger.info(f"  -> Đã lưu image_map tại: {map_path}")
+    if args.stage in ("all", "slice", "classify"):
+        logger.info(f"[Giai đoạn 1-2] Cắt ảnh {args.dpi} DPI, phân loại thư mục và sinh image_map...")
+        all_cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
+        key = next((k for k, c in all_cfg.items() if c["book_name"] == book_name), None)
+        if key is None:
+            logger.error(f"Không có cấu hình cho '{book_name}' trong {args.config}")
+            sys.exit(1)
+        res = prepare_book(key, all_cfg[key], out_root=Path("data/processed"), dpi=args.dpi)
+        logger.info(f"  -> Đã chuẩn bị: {res}")
 
     # Giai đoạn 3: OCR Engine
     if args.stage in ("all", "ocr"):

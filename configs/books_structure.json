@@ -25,18 +25,52 @@
       {
         "type": "range",
         "vi_start": 19,
-        "vi_end": 275,
+        "vi_end": 42,
         "ch_start": 616,
+        "ch_end": 593
+      },
+      {
+        "type": "range",
+        "vi_start": 43,
+        "vi_end": 44,
+        "ch_start": 582,
+        "ch_end": 581,
+        "note": "Bản scan đặt sai chỗ 4 trang Nôm: ảnh 581/582 là bản Nôm của trang vi 44/43, ảnh 591/592 của vi 54/53 (đối chiếu nội dung)"
+      },
+      {
+        "type": "range",
+        "vi_start": 45,
+        "vi_end": 52,
+        "ch_start": 590,
+        "ch_end": 583
+      },
+      {
+        "type": "range",
+        "vi_start": 53,
+        "vi_end": 54,
+        "ch_start": 592,
+        "ch_end": 591,
+        "note": "Bản scan đặt sai chỗ 4 trang Nôm: ảnh 581/582 là bản Nôm của trang vi 44/43, ảnh 591/592 của vi 54/53 (đối chiếu nội dung)"
+      },
+      {
+        "type": "range",
+        "vi_start": 55,
+        "vi_end": 275,
+        "ch_start": 580,
         "ch_end": 360
       },
       {
         "type": "missing_vi",
-        "ch": [359],
+        "ch": [
+          359
+        ],
         "note": "Trang Quốc ngữ in sẵn - 276 - (361) bị mất khi scan"
       },
       {
         "type": "missing_vi",
-        "ch": [358],
+        "ch": [
+          358
+        ],
         "note": "Trang Quốc ngữ in sẵn - 277 - (360) bị mất khi scan"
       },
       {
@@ -46,7 +80,11 @@
         "ch_start": 357,
         "ch_end": 319
       }
-    ]
+    ],
+    "rotate_180": [
+      421
+    ],
+    "rotate_note": "Ảnh trang 421 bị scan lộn ngược (số trang -423- nằm dưới đáy, chữ ngược)"
   },
   "tap2": {
     "book_name": "T1_Sách Dạy Đấng Làm Người Sửa Mình (Tập 2)",
@@ -69,6 +107,12 @@
         "ch_start": 674,
         "ch_end": 344
       }
-    ]
+    ],
+    "rotate_180": [
+      453,
+      485,
+      521
+    ],
+    "rotate_note": "Ảnh trang 453, 485, 521 bị scan lộn ngược (số trang nằm dưới đáy, chữ ngược)"
   }
 }

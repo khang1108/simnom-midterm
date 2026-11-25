@@ -20,6 +20,8 @@ DEFAULT_READING_TABLES = [
     "data/entries/hannom_rcv.jsonl",
     "data/entries/hvdic.jsonl",
     "data/entries/unihan.jsonl",
+    "configs/extra_pua_readings.csv",
+    "configs/catholic_nom_readings.csv",
 ]
 
 
@@ -117,6 +119,21 @@ def run_hybrid_alignment(
     print(f"[Hybrid Align] Đang chạy ocr-nom-align diff (mode={mode}, offline={offline})...")
     _run_cli(diff_cmd, check=True)
 
+    predicted = set(projected.get("predicted_imgs", []))
+    if predicted:
+        from ocr_nom_align import predicted_diff
+        from ocr_nom_align.tableio import COLUMNS, dump_diff, read_csv
+        rows = read_csv(out_csv)
+        for r in rows:
+            if r["img_id"] in predicted:
+                r["text_diff"] = dump_diff(predicted_diff(r["ch_txt"], r["vi_txt"]))
+        with out_csv.open("w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(COLUMNS)
+            w.writerows([r[c] for c in COLUMNS] for r in rows)
+        _run_cli([sys.executable, "-m", "ocr_nom_align", "render", str(out_csv), "--xlsx", str(out_xlsx)], check=True)
+        print(f"[Hybrid Align] {len(predicted)} trang mất bản Quốc ngữ: âm dự đoán, tô vàng toàn hàng.")
+
     # Bước 3: Kiểm tra cấu trúc CSV + XLSX (`check`)
     print(f"[Hybrid Align] Đang chạy ocr-nom-align check...")
     _run_cli([sys.executable, "-m", "ocr_nom_align", "check", str(out_csv), "--xlsx", str(out_xlsx)], check=True)
@@ -141,6 +158,9 @@ def run_hybrid_alignment(
         check_diff_cmd.extend(["--ch-char", ch_char])
     if image_map.exists():
         check_diff_cmd.extend(["--image-map", str(image_map)])
+    if (book_dir / "missing" / "ch").is_dir():
+        for flag in ("--missing-ch", "--missing-vi"):
+            check_diff_cmd.extend([flag, str(book_dir / "missing" / "ch")])
     if check_final:
         check_diff_cmd.append("--final")
 

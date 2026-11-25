@@ -96,10 +96,12 @@ class OCREngine:
                 hasher.update(chunk)
         return hasher.hexdigest()
 
-    def _get_cached_result(self, file_hash: str, script: str) -> Optional[List[Dict[str, Any]]]:
+    def _get_cached_result(self, file_hash: str, script: str, exclude_engine: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
+        """exclude_engine: bỏ qua kết quả cache của engine có tiền tố này (vd. nâng Tesseract -> VLM)."""
         conn = sqlite3.connect(self.cache_db)
         cur = conn.cursor()
-        cur.execute("SELECT result_json FROM ocr_cache WHERE file_hash = ? AND script = ?", (file_hash, script))
+        cur.execute("SELECT result_json FROM ocr_cache WHERE file_hash = ? AND script = ? AND engine NOT LIKE ?",
+                    (file_hash, script, f"{exclude_engine}%" if exclude_engine else "\x00"))
         row = cur.fetchone()
         conn.close()
         if row and row[0]:
@@ -227,59 +229,67 @@ class OCREngine:
         rects.sort(key=(lambda r: -r[0]) if script == "ch" else (lambda r: r[1]))
         return [[[x, y], [x + cw, y], [x + cw, y + ch], [x, y + ch]] for x, y, cw, ch in rects]
 
+    VLM_PROMPTS = {
+        "vi": ("Chép lại CHÍNH XÁC dòng chữ tiếng Việt trong ảnh (sách Công giáo in đầu thế kỷ 20). "
+               "Giữ nguyên chính tả cổ, dấu thanh, dấu gạch nối và dấu câu như trong ảnh; không sửa, không thêm. "
+               "Chỉ trả về đúng dòng chữ đó."),
+        "vi_strict": ("Chép lại CHÍNH XÁC dòng chữ tiếng Việt trong ảnh (sách Công giáo in đầu thế kỷ 20). "
+                      "Nhìn kỹ từng chữ: phân biệt đ (có gạch ngang) với d, và các dấu ă, â, ê, ô, ơ, ư cùng dấu thanh. "
+                      "Giữ nguyên chính tả cổ, dấu gạch nối và dấu câu như trong ảnh; không sửa, không thêm. "
+                      "Chỉ trả về đúng dòng chữ đó."),
+        "ch": ("Chép lại CHÍNH XÁC cột chữ Hán Nôm trong ảnh, đọc từ trên xuống dưới, không thêm khoảng trắng. "
+               "Không suy đoán chữ ngoài ảnh. Chỉ trả về đúng các chữ đó."),
+    }
+
+    def _vlm_read_crop(self, img: np.ndarray, pts: List[List[int]], script: str, pad: int = 4,
+                       min_h: int = 48, prompt: Optional[str] = None) -> str:
+        h, w = img.shape[:2]
+        if max(p[0] for p in pts) <= min(p[0] for p in pts) or max(p[1] for p in pts) <= min(p[1] for p in pts):
+            return ""
+        x1, x2 = max(0, min(p[0] for p in pts) - pad), min(w, max(p[0] for p in pts) + pad)
+        y1, y2 = max(0, min(p[1] for p in pts) - pad), min(h, max(p[1] for p in pts) + pad)
+        crop = img[y1:y2, x1:x2]
+        if crop.size == 0:
+            return ""
+        if script == "vi" and crop.shape[0] < min_h:
+            s = min_h / crop.shape[0]
+            crop = cv2.resize(crop, (int(crop.shape[1] * s), min_h), interpolation=cv2.INTER_LANCZOS4)
+        ok, encoded = cv2.imencode(".png", crop)
+        if not ok:
+            raise RuntimeError("Cannot encode text crop")
+        payload = {
+            "model": self.openai_model, "temperature": 0.0, "max_tokens": 200,
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(encoded.tobytes()).decode()}},
+                {"type": "text", "text": prompt or self.VLM_PROMPTS[script]},
+            ]}],
+        }
+        resp = requests.post(f"{self.openai_base_url}/chat/completions", json=payload, timeout=120,
+                             headers={"Authorization": f"Bearer {self.openai_key}", "Content-Type": "application/json"})
+        resp.raise_for_status()
+        return (resp.json()["choices"][0]["message"]["content"] or "").strip()
+
     def _ocr_openai_vision(self, image_path: Path, script: str = "vi") -> List[Dict[str, Any]]:
-        # Nhận dạng từng crop: văn bản luôn gắn với đúng vùng đã gửi,
-        # không ghép hai danh sách độc lập theo chỉ số.
+        """
+        VLM đọc lại từng vùng dòng/cột; văn bản luôn gắn với đúng vùng đã gửi.
+        - 'vi': vùng = box dòng của Tesseract; dòng VLM trả rỗng thì giữ chữ Tesseract.
+        - 'ch': vùng = cột phát hiện bằng OpenCV.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
         img = cv2.imread(str(image_path))
         if img is None:
             raise ValueError(f"Cannot read image: {image_path}")
-        height, width = img.shape[:2]
-        regions = self._detect_line_boxes_opencv(image_path, script=script)
-        if not regions:
+        if script == "vi":
+            base = self._ocr_tesseract(image_path)
+        else:
+            base = [{"transcription": "", "points": p} for p in self._detect_line_boxes_opencv(image_path, script=script)]
+        if not base:
             raise RuntimeError(f"No text regions detected in {image_path.name}")
-        prompt = (
-            "Đọc chính xác văn bản trong vùng ảnh này. "
-            + ("Đây là một cột Hán Nôm, đọc từ trên xuống dưới, không thêm khoảng trắng. "
-               if script == "ch" else "Đây là một dòng Quốc ngữ. ")
-            + 'Giữ nguyên chữ, từ cổ, dấu và chính tả; không suy đoán chữ ngoài ảnh. '
-              'Nếu chỉ có số trang, tiêu đề ngoài lề hoặc không có chữ thì trả text rỗng. '
-              'Trả duy nhất JSON {"text": "văn bản"}.'
-        )
-        boxes = []
-        for pts in regions:
-            if len(pts) != 4 or any(len(point) != 2 for point in pts):
-                raise ValueError("Invalid detected text region")
-            x1, x2 = min(p[0] for p in pts), max(p[0] for p in pts)
-            y1, y2 = min(p[1] for p in pts), max(p[1] for p in pts)
-            if not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
-                raise ValueError("Detected text region is empty or outside the image")
-            ok, encoded = cv2.imencode(".jpg", img[y1:y2, x1:x2])
-            if not ok:
-                raise RuntimeError("Cannot encode text crop")
-            b64_image = base64.b64encode(encoded.tobytes()).decode("utf-8")
-            payload = {
-                "model": self.openai_model,
-                "messages": [{"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:image/jpeg;base64,{b64_image}", "detail": "high"}},
-                ]}],
-                "response_format": {"type": "json_object"},
-                "temperature": 0.0,
-            }
-            resp = requests.post(
-                f"{self.openai_base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.openai_key}", "Content-Type": "application/json"},
-                json=payload, timeout=60,
-            )
-            resp.raise_for_status()
-            result = json.loads(resp.json()["choices"][0]["message"]["content"])
-            if not isinstance(result, dict) or not isinstance(result.get("text"), str):
-                raise ValueError("Vision OCR response must contain a text string")
-            text = result["text"].strip()
-            if text:
-                boxes.append({"transcription": text, "points": pts})
-        return boxes
+        with ThreadPoolExecutor(16) as ex:
+            texts = list(ex.map(lambda b: self._vlm_read_crop(img, b["points"], script), base))
+        return [{"transcription": t or b["transcription"], "points": b["points"]}
+                for b, t in zip(base, texts) if (t or b["transcription"]).strip()]
 
     # -------------------------------------------------------------------------
     # BACKEND 3: TESSERACT LOCAL FALLBACK (QUỐC NGỮ)
@@ -357,7 +367,8 @@ class OCREngine:
 
         file_hash = self._get_file_hash(image_path)
         if not force_reocr:
-            cached = self._get_cached_result(file_hash, script)
+            exclude = "tesseract" if (script == "vi" and self.openai_key) else None
+            cached = self._get_cached_result(file_hash, script, exclude_engine=exclude)
             if cached is not None:
                 return cached
 

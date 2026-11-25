@@ -54,6 +54,12 @@ def get_pdf_page_count(pdf_path: Path) -> int:
     return int(m.group(1))
 
 
+def rotate_180(path: Path) -> None:
+    from PIL import Image
+    with Image.open(path) as im:
+        im.transpose(Image.Transpose.ROTATE_180).save(path, quality=95)
+
+
 def build_image_map_pairs(
     book_name: str, pair_segments: List[Dict[str, Any]], total_pages: int
 ) -> List[Dict[str, Any]]:
@@ -336,6 +342,9 @@ def prepare_book(
             shutil.move(str(src_img), str(dest_path))
             if idx in missing_ch_set:
                 shutil.copy2(str(dest_path), str(book_dir / "missing" / "ch" / dest_name))
+
+    for p in cfg.get("rotate_180", []):
+        rotate_180(book_dir / page_to_primary[int(p)] / format_page_filename(book_name, int(p), actual_pages))
 
     # Xuất <Tên sách>_image_map.json
     pairs = build_image_map_pairs(book_name, cfg["pair_segments"], actual_pages)

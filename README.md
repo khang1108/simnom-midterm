@@ -14,9 +14,9 @@ Dự án đồ án môn học Xử lý Ngôn ngữ Tự nhiên (Natural Language
 ## 📖 Giới Thiệu Dự Án
 Dự án tập trung giải quyết bài toán xây dựng ngữ liệu song ngữ tự động (Automated Parallel Corpus Construction) giữa văn bản **Hán Nôm** cổ và bản dịch âm **Quốc ngữ** từ các tài liệu lịch sử scan chất lượng cao dạng PDF (cụ thể là bộ sách tôn giáo phân loại **T1**: *Sách Dạy Đấng Làm Người Sửa Mình*, Tập 1 & Tập 2).
 
-Hệ thống được thiết kế theo chuẩn **Rubric v2.1** với mức độ tự động hóa tối đa:
-1. **Trích xuất ảnh chuẩn ấn bản:** Cắt PDF ở độ phân giải 300 DPI bằng `pdftoppm`.
-2. **Phân loại layout T1:** Tự động định vị các trang Quốc ngữ (đọc xuôi $1 \to 318$) và Hán Nôm (đọc ngược $636 \to 319$), sinh file ánh xạ chuẩn `_image_map.json`.
+Hệ thống được thiết kế theo **Quy định đồ án v2.4** với mức độ tự động hóa tối đa:
+1. **Trích xuất ảnh:** Cắt PDF bằng `pdftoppm` ở 72 DPI (xấp xỉ độ phân giải ảnh gốc nhúng trong PDF, 800×1135; cắt 300 DPI chỉ phóng to ảnh ~5,5 lần). Trang trùng được loại bằng `qpdf` thành `<Tên sách>_updated.pdf`.
+2. **Phân loại layout T1:** Khoảng trang của từng thư mục (`vi`, `ch`, `intro`, `ref`, `toc`, `blank`, `misc`, `missing/ch`) và cách ghép cặp trang Quốc ngữ (đọc xuôi) – Hán Nôm (đọc ngược) khai báo trong `configs/books_structure.json`, sinh file ánh xạ `_image_map.json` và tự kiểm định.
 3. **Động cơ OCR thống nhất (OCREngine):**
    - Hán Nôm: Tích hợp API Kim Hán Nôm với cơ chế trích xuất tối ưu `structure-classification` (tiết kiệm 50% quota), lưu bộ nhớ đệm SQLite (`ocr_cache.db`).
    - Quốc ngữ: Hỗ trợ OpenAI-compatible Vision API (GPT-4o/Claude/Qwen) kết hợp phân đoạn OpenCV hoặc offline Tesseract OCR (`vie.traineddata`).
@@ -37,13 +37,28 @@ Hệ thống được thiết kế theo chuẩn **Rubric v2.1** với mức đ�
 ### Yêu Cầu Hệ Thống
 - Hệ điều hành: Linux (khuyến nghị Ubuntu 22.04 LTS / 24.04 LTS), macOS hoặc Windows (WSL2).
 - Python: Phiên bản >= 3.10 (Đã kiểm thử toàn diện trên Python 3.14 / 3.11).
-- Các gói công cụ hệ thống: `poppler-utils` (cho `pdftoppm`), `tesseract-ocr`.
+- Các gói công cụ hệ thống: `poppler-utils` (cho `pdftoppm`), `qpdf`, `tesseract-ocr` + dữ liệu tiếng Việt.
 
 ```bash
-# Cài đặt công cụ hệ thống trên Ubuntu/Debian
+# Ubuntu/Debian
 sudo apt-get update
-sudo apt-get install -y poppler-utils tesseract-ocr
+sudo apt-get install -y poppler-utils qpdf tesseract-ocr tesseract-ocr-vie
+# Arch Linux
+sudo pacman -S poppler qpdf tesseract tesseract-data-vie
 ```
+
+### Chuẩn Bị Dữ Liệu (không nằm trong git)
+```
+data/
+├── T1_Sách Dạy Đấng Làm Người Sửa Mình (Tập 1).pdf
+├── T1_Sách Dạy Đấng Làm Người Sửa Mình (Tập 2).pdf
+├── entries/      # btcn, dv, dnqatv_wikisource, hannom_rcv, hvdic, unihan, cjkvi_variants (.jsonl)
+└── tessdata/     # vie.traineddata (chép từ /usr/share/tessdata hoặc /usr/share/tesseract-ocr/*/tessdata)
+configs/kim_token.txt   # Bearer token Kim Hán Nôm (cookie `token` sau khi đăng nhập; hết hạn sau 1 giờ)
+```
+
+> ⚠️ API Kim Hán Nôm giới hạn 25 lượt/phút, 50 lượt/giờ, 200 lượt/ngày, 600 lượt/tuần (mỗi trang ≥ 2 lượt).
+> Kết quả OCR được cache trong `data/ocr_cache.db`, nên khi hết quota/token chỉ cần chạy lại `--stage ocr`.
 
 ### Cài Đặt Thư Viện Python (Pinned Dependencies)
 ```bash
@@ -72,7 +87,7 @@ python3 scripts/run_pipeline.py \
 ```
 
 ### 3. Chạy Từng Giai Đoạn Riêng Lẻ
-- **Giai đoạn 1 & 2: Cắt ảnh và phân loại:**
+- **Giai đoạn 1 & 2: Cắt ảnh, phân loại, `_updated.pdf` và `_image_map.json`** (tương đương `python3 scripts/prepare_books.py --book tap1`):
   ```bash
   python3 scripts/run_pipeline.py --pdf "data/T1_Sách Dạy Đấng Làm Người Sửa Mình (Tập 1).pdf" --stage slice
   ```
@@ -80,6 +95,21 @@ python3 scripts/run_pipeline.py \
   ```bash
   python3 scripts/run_pipeline.py --pdf "data/T1_Sách Dạy Đấng Làm Người Sửa Mình (Tập 1).pdf" --stage ocr
   ```
+  OCR Quốc ngữ chính dùng **Qwen3-VL-8B-Instruct** (vLLM, OpenAI-compatible): Tesseract chỉ tìm box dòng, VLM đọc lại
+  từng dòng (Tập 1: âm tiết sai 642 → 147, similarity 92,8% → 93,4%). Ví dụ với vLLM trên GPU server qua SSH tunnel:
+  ```bash
+  vllm serve Qwen/Qwen3-VL-8B-Instruct --port 8120 --max-model-len 8192 --limit-mm-per-prompt '{"image":1}'   # trên server
+  ssh -N -L 8120:127.0.0.1:8120 <server> &                                                                    # trên máy local
+  python3 scripts/run_pipeline.py --pdf "..." --stage ocr \
+      --openai-key EMPTY --openai-base-url http://localhost:8120/v1 --openai-model Qwen/Qwen3-VL-8B-Instruct
+  ```
+  Vế Nôm: `configs/pua_to_unicode.csv` (ký tự riêng PUA của Kim → Unicode) và `configs/kim_glyph_fix.csv`
+  (chữ Kim nhận nhầm hình nhất quán, đã đối chiếu ảnh + IDS, vd. 𠯇/吔 → 吧 "và") được áp dụng ngay khi ghi `Label.txt`.
+  Sau OCR, bước **ROVER** chọn lại từng từ Quốc ngữ giữa bản Qwen, bản Tesseract và lượt Qwen thứ hai (ảnh ×2): chỉ lấy
+  bản phụ khi nó là âm đọc của chữ Nôm trên trang đối ứng còn bản chính thì không (sửa d/đ, ă/â/ơ/ư).
+  Âm theo quy ước Nôm Công giáo của sách (tên riêng Giê-su 支秋, I-ghe-rê-gia 衣計移加…; 識=sấm, 諫=khiêm…) nằm trong
+  `configs/catholic_nom_readings.csv`. Lỗi bản scan khai báo trong `configs/books_structure.json`: trang lộn ngược
+  (`rotate_180`) và trang Nôm đặt sai chỗ (các đoạn `range` một–hai trang).
 - **Giai đoạn 4: Ghép câu xuyên trang, dóng hàng DP và xuất CSV / Excel:**
   ```bash
   python3 scripts/run_pipeline.py --pdf "data/T1_Sách Dạy Đấng Làm Người Sửa Mình (Tập 1).pdf" --stage align
@@ -103,13 +133,15 @@ sinom-midterm/
 │   ├── ocr_cache.db           # SQLite cache lưu trữ kết quả OCR
 │   ├── tessdata/              # Dữ liệu offline Tesseract tiếng Việt (vie.traineddata)
 │   └── processed/             # Thư mục chứa dữ liệu sách sau xử lý
-├── docs/                      # Tài liệu đề bài và rubric quy định (Rules v2.1)
+├── docs/                      # Tài liệu đề bài và quy định đồ án (đến v2.4)
 ├── scripts/
 │   ├── run_pipeline.py        # CLI điều phối toàn bộ quy trình
+│   ├── prepare_books.py       # Cắt ảnh + phân loại + image_map theo configs/books_structure.json
+│   ├── run_official_align.py  # Dóng hàng hybrid (BookAligner + tools/ocr-nom-align)
 │   └── package_submission.py  # Đóng gói và kiểm định file nộp bài
 ├── src/
 │   ├── dict_engine/           # Động cơ lập chỉ mục và tra cứu từ điển
-│   ├── preprocessor/          # Cắt ảnh PDF 300 DPI, phân loại và lập map
+│   ├── preprocessor/          # Tiện ích tiền xử lý ảnh (tăng cường, phân loại trang trắng)
 │   ├── ocr/                   # Động cơ OCR thống nhất (Kim Hán Nôm + OpenAI/Tesseract)
 │   ├── segmenter/             # Làm sạch văn bản, ghép câu xuyên trang và tách câu
 │   ├── aligner/               # Thuật toán quy hoạch động dóng hàng Nôm - Quốc ngữ

@@ -53,25 +53,25 @@ class RemainingFixTests(unittest.TestCase):
             engine.openai_key = 'test'
             engine.openai_base_url = 'https://example.invalid'
             engine.openai_model = 'test'
-            responses = []
-            for text in ['', 'Thiên địa']:
+            def reply(url, json=None, **kw):
                 response = Mock()
-                response.json.return_value = {'choices': [{'message': {'content': json.dumps({'text': text})}}]}
-                responses.append(response)
+                crop = cv2.imdecode(np.frombuffer(__import__('base64').b64decode(
+                    json['messages'][0]['content'][0]['image_url']['url'].split(',', 1)[1]), np.uint8), cv2.IMREAD_COLOR)
+                response.json.return_value = {'choices': [{'message': {'content': 'Thiên địa' if crop.shape[0] > 20 else ''}}]}
+                return response
             with patch.object(engine, '_detect_line_boxes_opencv', return_value=regions) as detect, \
-                 patch('src.ocr.engine.requests.post', side_effect=responses) as post:
+                 patch('src.ocr.engine.requests.post', side_effect=reply) as post:
                 boxes = engine._ocr_openai_vision(path, script='ch')
             detect.assert_called_once_with(path, script='ch')
             self.assertEqual(boxes, [{'transcription': 'Thiên địa', 'points': regions[1]}])
             self.assertEqual(post.call_count, 2)
 
-    def test_vision_rejects_zero_area_box_before_request(self):
+    def test_vision_skips_zero_area_box_without_request(self):
         engine = OCREngine.__new__(OCREngine)
         with patch('src.ocr.engine.cv2.imread', return_value=np.zeros((10, 10, 3), dtype=np.uint8)), \
              patch.object(engine, '_detect_line_boxes_opencv', return_value=[[[0, 0]] * 4]), \
              patch('src.ocr.engine.requests.post') as post:
-            with self.assertRaises(ValueError):
-                engine._ocr_openai_vision(Path('page.jpg'))
+            self.assertEqual(engine._ocr_openai_vision(Path('page.jpg'), script='ch'), [])
             post.assert_not_called()
 
 

@@ -6,6 +6,7 @@ configs/openai_config.json
 
 # Python
 __pycache__/
+.venv/
 *.pyc
 .pytest_cache/
 

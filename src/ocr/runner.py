@@ -1,10 +1,24 @@
 import argparse
+import difflib
+import re
+import csv
 import sys
 from pathlib import Path
 from tqdm import tqdm
 
 from src.ocr.engine import OCREngine
 from src.ocr.ppocr_adapter import PPOCRAdapter
+
+PUA_MAP_FILE = Path("configs/pua_to_unicode.csv")
+GLYPH_FIX_FILE = Path("configs/kim_glyph_fix.csv")
+
+
+def load_pua_map(path: Path = PUA_MAP_FILE) -> dict:
+    """Bảng str.translate: ký tự riêng (PUA) của Kim Hán Nôm -> mã Unicode chuẩn (đã đối chiếu hình chữ/IDS)."""
+    if not path.exists():
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return {int((r.get("pua") or r["kim"])[2:], 16): chr(int(r["unicode"][2:], 16)) for r in csv.DictReader(f)}
 
 def check_ppocr_status(folder: Path) -> bool:
     """Kiểm tra nhanh xem Label.txt và fileState.txt đã tạo đủ và chuẩn hay chưa."""
@@ -17,6 +31,9 @@ def check_ppocr_status(folder: Path) -> bool:
 
 def process_folder(folder: Path, script_type: str, ocr_engine: OCREngine, dry_run: bool = False):
     """Xử lý OCR và sinh Label.txt, fileState.txt cho một thư mục (ch hoặc vi)."""
+    from src.aligner.book_aligner import BookAligner
+    from src.segmenter.core.cleaner import TextCleaner
+
     if not folder.exists():
         return
 
@@ -27,6 +44,7 @@ def process_folder(folder: Path, script_type: str, ocr_engine: OCREngine, dry_ru
     state_lines = []
     char_label_lines = []
     char_state_lines = []
+    pua_map = {**load_pua_map(), **load_pua_map(GLYPH_FIX_FILE)} if script_type == "ch" else {}
 
     for img_path in tqdm(images, desc=f"OCR {folder.name}/"):
         if dry_run:
@@ -39,6 +57,12 @@ def process_folder(folder: Path, script_type: str, ocr_engine: OCREngine, dry_ru
             boxes = ocr_engine.recognize(img_path, script=script_type)
             if not boxes or not any(b.get("transcription", "").strip() for b in boxes):
                 raise RuntimeError(f"OCR returned no text for {img_path.name}; labels were not written.")
+        if pua_map:
+            boxes = [{**b, "transcription": b.get("transcription", "").translate(pua_map)} for b in boxes]
+        if not dry_run:
+            boxes = BookAligner.filter_body_boxes(boxes, script_type)
+            if script_type == "vi":
+                boxes = [{**b, "transcription": TextCleaner.fix_vi_ocr(b.get("transcription", ""))} for b in boxes]
 
         state_line = PPOCRAdapter.format_state_entry(folder.name, img_path.name)
 
@@ -126,6 +150,9 @@ def run_ocr_pipeline(
     # 2. Chạy ch/ (Hán Nôm)
     process_folder(ch_dir, script_type="ch", ocr_engine=engine, dry_run=dry_run)
 
+    if not dry_run and engine.openai_key and vi_dir.exists() and ch_dir.exists():
+        reconcile_vi_with_nom(book_dir, engine)
+
 def main():
     parser = argparse.ArgumentParser(description="Unified OCR Runner for Sino-Nom Dataset Pipeline.")
     parser.add_argument("--book-dir", type=str, required=True, help="Path to book directory (containing ch/ and vi/)")
@@ -144,6 +171,89 @@ def main():
         openai_model=args.openai_model,
         dry_run=args.dry_run
     )
+
+
+
+_WORD_RE = re.compile(r"[^\W\d_]+")
+
+
+def merge_vi_hypotheses(qwen: str, tess: str, page_keys: set) -> str:
+    """ROVER 2 bản OCR một dòng Quốc ngữ: với từ mà hai bản chỉ khác dấu / d-đ, lấy bản Tesseract khi đó là âm
+    đọc của một chữ Nôm trên trang đối ứng còn bản Qwen thì không. Không sinh chữ mới ngoài hai bản OCR."""
+    from ocr_nom_align.tokens import syllable_key
+    from src.segmenter.core.cleaner import _match_case, _vi_base
+
+    qw, tw = list(_WORD_RE.finditer(qwen)), list(_WORD_RE.finditer(tess))
+    base = lambda w: "".join(_vi_base(c) for c in w)
+    sm = difflib.SequenceMatcher(a=[base(m.group()) for m in qw], b=[base(m.group()) for m in tw], autojunk=False)
+    out, last = [], 0
+    for a, b, n in sm.get_matching_blocks():
+        for k in range(n):
+            q, t = qw[a + k], tw[b + k]
+            if (q.group().lower() != t.group().lower() and syllable_key(t.group()) in page_keys
+                    and syllable_key(q.group()) not in page_keys):
+                out += [qwen[last:q.start()], _match_case(q.group(), t.group().lower())]
+                last = q.end()
+    return "".join(out) + qwen[last:]
+
+
+def reconcile_vi_with_nom(book_dir: Path, ocr_engine: OCREngine) -> int:
+    """Sửa vi/Label.txt bằng merge_vi_hypotheses, đối chiếu âm đọc các chữ Nôm của cặp trang (và cặp kề bên).
+    Bản Tesseract của mỗi trang được cache dưới script 'vi_tess'. Trả về số từ đã đổi."""
+    import json
+    from ocr_nom_align.readings import ReadingTable
+    from src.aligner.book_aligner import BookAligner
+    from src.segmenter.core.cleaner import TextCleaner
+    from scripts.run_official_align import DEFAULT_READING_TABLES
+
+    book_dir = Path(book_dir)
+    maps = list(book_dir.glob("*_image_map.json"))
+    vi_label = book_dir / "vi" / "Label.txt"
+    if not maps or not vi_label.exists():
+        return 0
+    pairs = [p for p in json.loads(maps[0].read_text(encoding="utf-8"))["pairs"] if p.get("vi") and p.get("ch")]
+    ch_pages = BookAligner.load_label_file(str(book_dir / "ch" / "Label.txt"))
+    vi_pages = BookAligner.load_label_file(str(vi_label))
+    table = ReadingTable.from_paths(DEFAULT_READING_TABLES)
+    keys_of = lambda imgs: {k for i in imgs for b in ch_pages.get(i, []) for c in b["transcription"] for k in table.readings(c)}
+
+    page_keys = {}
+    for i, p in enumerate(pairs):
+        near = [x for q in pairs[max(0, i - 1):i + 2] for x in q["ch"]]
+        for v in p["vi"]:
+            page_keys[v] = keys_of(near)
+
+    changed = 0
+    for name, boxes in vi_pages.items():
+        img = book_dir / "vi" / name
+        h = ocr_engine._get_file_hash(img)
+        tess = ocr_engine._get_cached_result(h, "vi_tess")
+        if tess is None:
+            tess = [{**b, "transcription": TextCleaner.fix_vi_ocr(b["transcription"])} for b in ocr_engine._ocr_tesseract(img)]
+            ocr_engine._save_cached_result(h, name, "vi_tess", "tesseract:vie", tess)
+        alts = [{json.dumps(b["points"]): b["transcription"] for b in tess}]
+        vlm96 = ocr_engine._get_cached_result(h, "vi_vlm96")
+        if vlm96 is None and ocr_engine.openai_key:
+            import cv2
+            im = cv2.imread(str(img))
+            vlm96 = [{"transcription": ocr_engine._vlm_read_crop(im, b["points"], "vi", min_h=96,
+                                                                 prompt=ocr_engine.VLM_PROMPTS["vi_strict"]),
+                      "points": b["points"]} for b in boxes]
+            ocr_engine._save_cached_result(h, name, "vi_vlm96", f"openai:{ocr_engine.openai_model}:x96", vlm96)
+        if vlm96:
+            alts.append({json.dumps(b["points"]): b["transcription"] for b in vlm96})
+        for b in boxes:
+            old = b["transcription"]
+            for alt in alts:
+                t = alt.get(json.dumps(b["points"]))
+                if t:
+                    b["transcription"] = merge_vi_hypotheses(b["transcription"], t, page_keys.get(name, set()))
+            changed += sum(x != y for x, y in zip(_WORD_RE.findall(b["transcription"]), _WORD_RE.findall(old)))
+    with open(vi_label, "w", encoding="utf-8") as f:
+        f.writelines(PPOCRAdapter.format_label_entry("vi", n, bs, script_type="vi") for n, bs in vi_pages.items())
+    print(f"  [ROVER] vi/Label.txt: {changed} từ lấy theo bản OCR phụ (khớp âm Nôm của trang đối ứng)")
+    return changed
+
 
 if __name__ == "__main__":
     main()

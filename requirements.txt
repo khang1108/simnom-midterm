@@ -6,3 +6,5 @@ pandas==3.0.3
 pillow==13.0.0
 requests==2.34.2
 tqdm==4.70.1
+fonttools==4.68.0
+-e ./tools/ocr-nom-align

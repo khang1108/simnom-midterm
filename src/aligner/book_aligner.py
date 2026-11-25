@@ -247,6 +247,37 @@ class BookAligner:
 
         return results
 
+    _VI_SYL_RE = re.compile(r"[^\W\d_]+")
+
+    def _fill_predicted_vi(self, raw_pairs: List[Tuple[str, str, Optional[str]]]) -> List[Tuple[str, str, str]]:
+        """Âm dự đoán cho vế Nôm có vi=None (EBMT đơn giản): mỗi chữ lấy âm mà chính cuốn sách dóng với nó
+        nhiều nhất ở các câu có số chữ Nôm bằng số âm tiết; chữ chưa gặp thì lấy một âm trong từ điển."""
+        from collections import Counter, defaultdict
+        seen: Dict[str, Counter] = defaultdict(Counter)
+        for _, nom_s, vi_s in raw_pairs:
+            if vi_s is None:
+                continue
+            chars = [c for c in nom_s if unicodedata.category(c) in ("Lo", "Co")]
+            syls = self._VI_SYL_RE.findall(vi_s)
+            if chars and len(chars) == len(syls):
+                for c, syl in zip(chars, syls):
+                    seen[c][syl.lower()] += 1
+
+        def read(c: str) -> str:
+            if seen.get(c):
+                return seen[c].most_common(1)[0][0]
+            readings = sorted(self.dict_lookup.get_readings(c))
+            return readings[0] if readings else "〓"
+
+        out = []
+        for img, nom_s, vi_s in raw_pairs:
+            if vi_s is None:
+                syls = [read(c) for c in nom_s if unicodedata.category(c) in ("Lo", "Co")]
+                vi_s = " ".join(syls)
+                vi_s = vi_s[:1].upper() + vi_s[1:]
+            out.append((img, nom_s, vi_s))
+        return out
+
     @staticmethod
     def _coalesce_pairs(raw_pairs: List[Tuple[str, str, str]]) -> List[Tuple[str, str, str]]:
         """
@@ -382,7 +413,8 @@ class BookAligner:
             except Exception as e:
                 logger.warning(f"Không đọc được {image_map_path}: {e}")
 
-        raw_sentence_pairs: List[Tuple[str, str, str]] = []
+        raw_sentence_pairs: List[Tuple[str, str, Optional[str]]] = []
+        predicted_imgs: set = set()
 
         if page_pairs:
             logger.info(f"Dóng hàng theo {len(page_pairs)} cặp trang từ {image_map_path}...")
@@ -410,6 +442,16 @@ class BookAligner:
             for pair in stitched_pairs:
                 ch_imgs = pair.get("ch", [])
                 vi_imgs = pair.get("vi", [])
+                if ch_imgs and not vi_imgs:
+                    for image in ch_imgs:
+                        page_text = TextCleaner.normalize_nfc("".join(
+                            PPOCRAdapter.clean_transcription(b.get("transcription", ""))
+                            for b in ch_pages_data.get(image, [])
+                        ))
+                        if page_text.strip():
+                            raw_sentence_pairs.append((image, page_text, None))
+                            predicted_imgs.add(image)
+                    continue
                 if not ch_imgs or not vi_imgs:
                     continue
 
@@ -482,6 +524,9 @@ class BookAligner:
                 vi_s = vi_item["text"] if vi_item else ""
                 raw_sentence_pairs.append((ch_img, TextCleaner.normalize_nfc(nom_s), TextCleaner.normalize_nfc(vi_s)))
 
+        if predicted_imgs:
+            raw_sentence_pairs = self._fill_predicted_vi(raw_sentence_pairs)
+
         # Đảm bảo không có hàng nào rỗng một vế trước khi đánh sentence_id
         coalesced = self._coalesce_pairs(raw_sentence_pairs)
         pairs_out = []
@@ -500,6 +545,7 @@ class BookAligner:
         return {
             "pairs": pairs_out,
             "clean_paths": clean_paths,
+            "predicted_imgs": sorted(predicted_imgs),
         }
 
     def align_book(
