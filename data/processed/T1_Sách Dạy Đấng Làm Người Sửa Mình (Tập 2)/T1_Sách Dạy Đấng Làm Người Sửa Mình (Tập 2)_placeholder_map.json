@@ -1,0 +1,19 @@
+{
+  "placeholders": [
+    {
+      "label": {
+        "img_id": "T1_Sách Dạy Đấng Làm Người Sửa Mình (Tập 2).387.jpg",
+        "box_index": 9,
+        "pos": 13,
+        "char_box_index": 229
+      },
+      "align": {
+        "sentence_id": "T1_Sách Dạy Đấng Làm Người Sửa Mình (Tập 2).387.7",
+        "pos": 36
+      },
+      "unicode": null,
+      "ids": "⿱𥫗頓",
+      "note": "Kim Hán Nôm PUA U+F0815, âm lớn"
+    }
+  ]
+}

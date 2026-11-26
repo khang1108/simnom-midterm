@@ -12,9 +12,10 @@ __pycache__/
 
 # Data Cache & Processing
 data/ocr_cache.db
-data/processed/
 _temp*/
 output/
 *.zip
 
-data/
+data/*
+!data/processed/
+data/processed/**/*.pdf
