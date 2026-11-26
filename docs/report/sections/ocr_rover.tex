@@ -1,0 +1,57 @@
+\section{Nhận Dạng Quang Học Đa Mô Hình và Chuẩn Hóa Tự Hình -- Chính Tả}
+
+\subsection{Giải mã vùng sử dụng riêng (PUA) và hiệu chỉnh tự hình bằng cấu trúc biểu ý (IDS)}
+
+Trong thực tế nhận dạng văn bản Hán Nôm khắc in, một phần đáng kể sai số dóng hàng không bắt nguồn từ thuật toán so khớp mà phát sinh ngay từ sự lệch chuẩn mã ký tự và hiện tượng nhầm lẫn giữa các tự hình gần nét. Trước hết, bộ nhận dạng chuyên dụng cho chữ Nôm thường xuất ra các điểm mã nằm trong vùng sử dụng riêng (\code{U+F0000}--\code{U+FFFFD}) đối với những chữ Nôm chưa có trong các bảng mã cũ. Vì các mã PUA này không khớp trực tiếp với các từ điển chuẩn hóa theo Unicode hiện đại (CJK Extension G, H, I), hệ thống sẽ đánh dấu chúng là ký tự ngoài từ điển nếu không quy đổi trước. Thông qua việc đối chiếu mã nguồn chữ Việt trong cơ sở dữ liệu Unihan \cite{unihan2025} kết hợp phân tích chuỗi mô tả cấu trúc biểu ý (IDS) \cite{morioka2008ids} trực tiếp trên ảnh khắc in gốc, toàn bộ $25$ loại mã PUA xuất hiện trong hai tập sách đã được rà soát và phân định rõ ràng. Trong số này, $24$ loại tự hình đã được ánh xạ về đúng điểm mã Unicode chính thức, chẳng hạn \nom{𱥺} (\code{U+3197A}, \textit{một}), \nom{𱏺} (\code{U+313FA}, \textit{sách}), \nom{𱺵} (\code{U+31EB5}, \textit{là}), \nom{𲈳} (\code{U+32233}) và \nom{𲈫} (\code{U+3222B}, \textit{cửa}), \nom{𩈘} (\code{U+29218}, cấu trúc \ids{⿰}\nom{末面}, \textit{mặt}), \nom{𫢩} (\code{U+2B8A9}, \ids{⿰}\nom{尼今}, \textit{nay}) hay \nom{𣌋} (\code{U+2330B}, \ids{⿱}\nom{日歛}, \textit{sớm}). Nhờ bước quy đổi này, Tập 1 không còn ký tự đại diện ngoài chuẩn nào ($0$ ký tự \nom{〓}), còn trên Tập 2 chỉ duy nhất $1$ loại tự hình (ứng với mã nhận dạng thô \code{U+F0815}, xuất hiện một lần tại trang $387$, câu thứ $7$) mang cấu trúc biểu ý \ids{⿱}\nom{𥫗頓} (bộ trúc \nom{𥫗} phía trên, chữ đốn \nom{頓} biểu âm phía dưới, đọc là \textit{lớn}) thực sự chưa có trong chuẩn Unicode hiện hành; trường hợp này được biểu diễn bằng ký hiệu \nom{〓} (\code{U+3013}) và lưu hồ sơ tọa độ chi tiết ở cả mức cột, mức ô chữ đơn và mức câu.
+
+Song song với khâu giải mã PUA, quá trình khảo sát ảnh bản in cho thấy khi nét khắc bị mòn hoặc mực in nhòe cục bộ, bộ nhận dạng thị giác có xu hướng đưa một số chữ Nôm tần suất cao về các chữ Hán phổ thông có bố cục bộ thủ gần giống. Dựa trên đối chiếu trực tiếp nét khắc với cấu trúc IDS, nhóm đã tổng hợp bảng quy đổi cho $19$ cặp tự hình bị nhận nhầm mang tính hệ thống xuyên suốt cả hai tập sách; Bảng~\ref{tab:glyph_fix} minh họa một số quy luật tiêu biểu cùng nguyên nhân thị giác tương ứng.
+
+\begin{table}[H]
+    \centering
+    \footnotesize
+    \renewcommand{\arraystretch}{1.22}
+    \begin{tabularx}{\textwidth}{c c c c X}
+        \toprule
+        \textbf{Nhận nhầm} & \textbf{Tự hình đúng} & \textbf{Cấu trúc IDS} & \textbf{Âm đọc} & \textbf{Cơ chế gây nhầm lẫn thị giác trên bản in cổ} \\
+        \midrule
+        \nom{𠯇} / \nom{吔} & \nom{吧} (\texttt{U+5427}) & \ids{⿰}\nom{口巴} & \textit{và} & Nét sổ giữa của bộ \nom{巴} bị đứt hoặc dính vào nét móc, nhìn giống \nom{巳} hoặc \nom{也} \\
+        \nom{髀} & \nom{𪡔} (\texttt{U+2A854}) & \ids{⿰}\nom{口}\ids{⿱}\nom{罒廾} & \textit{ra} & Bộ \nom{口} và \ids{⿱}\nom{罒廾} xếp sát nhau bị nhận nhầm thành bộ \nom{骨} và \nom{卑} \\
+        \nom{樓} & \nom{𢖕} (\texttt{U+22595}) & \ids{⿰}\nom{後娄} & \textit{sau} & Bộ \nom{彳} (\nom{後}) nét mảnh bị nhầm sang bộ \nom{木} của chữ Hán phổ thông \nom{樓} \\
+        \nom{𠺌} & \nom{魂} (\texttt{U+9B42}) & \ids{⿰}\nom{云鬼} & \textit{hồn} & Phần \nom{云} in nhỏ bên trái bị nhầm thành bộ \nom{口} \\
+        \nom{僃} & \nom{𡞕} (\texttt{U+21795}) & \ids{⿰}\nom{女备} & \textit{vợ} & Bộ \nom{女} hẹp ngang bị nhầm thành bộ nhân đứng \nom{亻} \\
+        \nom{肄} & \nom{𤈠} (\texttt{U+24220}) & \ids{⿰}\nom{火聿} & \textit{sốt} & Bộ \nom{火} ở vế trái bị mờ nét chấm, nhầm sang vế trái của \nom{肄} \\
+        \nom{聰} / \nom{課} & \nom{嚕} / \nom{𠵩} & \ids{⿰}\nom{口魯} / \ids{⿰}\nom{口果} & \textit{rủa} / \textit{quở} & Bộ \nom{口} của chữ Nôm biểu ý lời nói bị nhầm sang bộ \nom{耳} và \nom{言} \\
+        \nom{海} / \nom{𬇚} & \nom{泑} (\texttt{U+6CD1}) & \ids{⿰}\nom{氵幼} & \textit{ao} & Vế biểu âm \nom{幼} nhòe mực bị kéo về chữ Hán tần suất cao \nom{海} \\
+        \nom{配} / \nom{盆} & \nom{醜} / \nom{益} & \ids{⿰}\nom{酉鬼} / \ids{⿱}\ids{⿰}\nom{丷一}\ids{⿱}\nom{八皿} & \textit{xấu} / \textit{ích} & Khuyết nét bên phải (\nom{鬼}) hoặc nhòe phần đầu chữ \nom{益} \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Một số quy luật nhầm lẫn tự hình Hán Nôm mang tính hệ thống và phân giải theo IDS}
+    \label{tab:glyph_fix}
+\end{table}
+
+\subsection{Nhận dạng Quốc ngữ bằng mô hình ngôn ngữ -- thị giác trên khung dòng nội suy}
+
+Các thử nghiệm bước đầu trên bản in Quốc ngữ đầu thế kỷ XX cho thấy hai họ mô hình nhận dạng có điểm mạnh và điểm yếu bổ trợ cho nhau. Một mặt, bộ nhận dạng dòng truyền thống dựa trên mạng hồi quy LSTM như Tesseract định vị khung tọa độ của từng dòng chữ khá ổn định, nhưng khi đọc nội dung lại thường xuyên sai dấu thanh điệu và nhầm lẫn các cặp ký tự gần hình như \textit{d/đ}, \textit{i/l}, \textit{ch/cb}, \textit{th/tb} hoặc lặp nguyên âm mang dấu (ví dụ \textit{tộôi}). Mặt khác, nếu đưa nguyên cả trang ảnh vào một mô hình ngôn ngữ -- thị giác đa phương thức (VLM) \cite{bai2025qwenvl}, mô hình có khả năng đọc dấu tiếng Việt tốt hơn nhưng lại dễ bỏ sót dòng, chập hai dòng liền kề hoặc tự ý diễn giải từ cổ theo chính tả hiện đại.
+
+Để tận dụng thế mạnh của cả hai hướng tiếp cận, luồng nhận dạng Quốc ngữ được tách thành hai pha gắn chặt theo không gian dòng. Ở pha đầu tiên, trang ảnh được phân hoạch thành danh sách có thứ tự các hộp bốn điểm bao sát từng dòng ngang $B_1, B_2, \dots, B_L$, ưu tiên sử dụng khung dòng từ bộ phân tích bố cục truyền thống (và có thể thay bằng phân tích thành phần liên thông hình thái học khi vận hành độc lập). Sang pha thứ hai, từng vùng dòng $B_\ell$ được cắt rời kèm phần đệm biên $4\text{ px}$; nếu chiều cao dòng nhỏ hơn ngưỡng $h_{\min}$ ($48\text{ px}$ ở lượt chính), ảnh dòng sẽ được phóng đại đẳng hướng bằng bộ lọc Lanczos bậc 4 ($\operatorname{sinc}$ cửa sổ $8 \times 8$) trước khi đưa vào mô hình Qwen3-VL-8B-Instruct ở chế độ suy luận tất định ($T = 0$). So với phép nội suy song tuyến tính thông thường, bộ lọc Lanczos giữ độ sắc nét tốt hơn ở nét gạch ngang chữ \textit{đ} cũng như khoảng hở giữa dấu mũ và dấu thanh điệu.
+
+Bên cạnh đó, đối với giả thuyết sinh ra từ bộ nhận dạng truyền thống, nhóm áp dụng thêm một bộ lọc hậu xử lý chính tả có điều kiện nhằm bảo toàn từ cổ. Gọi $\mathcal{V}_{\text{vi}}$ là tập hợp các âm tiết đơn tiếng Việt hợp lệ trích xuất từ kho từ điển; một từ $w$ chỉ được đưa vào diện xét sửa khi $w \notin \mathcal{V}_{\text{vi}}$, thông qua tập ứng viên biến đổi tối tiểu $\mathcal{C}(w)$ đặc trưng cho lỗi quang học (khử nguyên âm đúp cùng gốc không dấu, rút gọn lỗi chập \textit{dđ} thành \textit{đ}, khôi phục \textit{b} thành \textit{h} sau các phụ âm đầu \textit{c, t, k, p, g, n}), và ứng viên $w' \in \mathcal{C}(w)$ chỉ được chấp nhận nếu $w' \in \mathcal{V}_{\text{vi}}$. Ràng buộc điều kiện $w \notin \mathcal{V}_{\text{vi}}$ giúp các hình thái chính tả cổ vốn có mặt trong từ điển lịch sử như \textit{chưng, lọn, lở, hằng, phô} cũng như danh từ riêng có gạch nối (\textit{Phê-rô, Giê-su}) không bị sửa nhầm sang từ hiện đại.
+
+\subsection{Hợp nhất giả thuyết ROVER có ràng buộc ngữ âm liên ngôn ngữ}
+
+Ngay cả khi sử dụng mô hình thị giác 8 tỷ tham số trên ảnh dòng đã nội suy, các trang giấy ố vàng nặng hoặc in nhạt ở nét phụ vẫn phát sinh một tỷ lệ nhỏ lỗi bỏ sót nét ngang chữ \textit{đ} (chẳng hạn đọc \textit{đàng} thành \textit{dàng}, \textit{Đấng} thành \textit{Dấng}) hoặc nhầm giữa các nguyên âm có dấu phụ gần nhau (\textit{ư/u}, \textit{ơ/ô}, \textit{ă/â}). Trong nhận dạng tiếng nói và văn bản, kỹ thuật ROVER (Recognizer Output Voting Error Reduction) \cite{fiscus1997rover} thường kết hợp nhiều giả thuyết bằng bỏ phiếu đa số; tuy nhiên, khi số lượng mô hình nhỏ và các mô hình đều có xu hướng nghiêng về từ tiếng Việt hiện đại phổ biến hơn, bỏ phiếu không ràng buộc khó phân biệt được đâu là cách đọc đúng với bản khắc cổ.
+
+Từ nhận xét trên, nhóm áp dụng cơ chế \textbf{ROVER có ràng buộc ngữ âm liên ngôn ngữ}, sử dụng trực tiếp chuỗi chữ Hán Nôm của trang đối ứng làm tín hiệu chọn lọc giữa ba luồng giả thuyết độc lập trên cùng một hộp dòng $B_\ell$: giả thuyết chính $H^{(1)}_\ell$ từ Qwen3-VL-8B ở độ cao chuẩn hóa $48\text{ px}$, giả thuyết đối chứng $H^{(2)}_\ell$ từ bộ nhận dạng truyền thống sau hậu xử lý, và giả thuyết độ phân giải cao $H^{(3)}_\ell$ từ Qwen3-VL-8B ở chiều cao $96\text{ px}$ với chỉ dẫn chú trọng các cặp nét vi mô (\textit{d/đ}, \textit{ă/â/ê/ô/ơ/ư}). Với mỗi trang Quốc ngữ thuộc cặp ánh xạ thứ $i$, hệ thống xét cửa sổ ba cặp trang liên tiếp $\mathcal{W}_i = \{i-1, i, i+1\}$ để bao quát cả các câu vắt qua ranh giới chuyển trang. Gọi $\mathcal{C}(\mathcal{W}_i)$ là tập mọi tự hình Hán Nôm xuất hiện trong cửa sổ $\mathcal{W}_i$ và $\mathcal{R}_0(c)$ là tập khóa âm tiết (chuẩn hóa NFC, viết thường, lược bỏ năm dấu thanh nhưng giữ nguyên phân biệt nguyên âm có dấu phụ và phụ âm \textit{d/đ}) của tự hình $c$ trong kho từ điển tổng hợp; không gian khóa ngữ âm khả dĩ của vùng trang được xác định bởi:
+\begin{equation}
+    \mathcal{K}_i = \bigcup_{c \in \mathcal{C}(\mathcal{W}_i)} \mathcal{R}_0(c).
+\end{equation}
+
+Tiếp theo, định nghĩa phép chiếu khung chữ cái cơ sở $\beta(w)$ chuyển mỗi từ tiếng Việt về chuỗi chữ cái Latinh không dấu (ví dụ $\beta(\text{``đàng''}) = \beta(\text{``dàng''}) = \text{``dang''}$ và $\beta(\text{``chưng''}) = \beta(\text{``chúng''}) = \text{``chung''}$). Khi so khớp giả thuyết chính $H^{(1)}_\ell = (w_1, \dots, w_p)$ với từng giả thuyết phụ $H^{(m)}_\ell = (u_1, \dots, u_q)$ ($m \in \{2, 3\}$), hệ thống tìm các đoạn khớp dài nhất trên hai dãy khung cơ sở $(\beta(w_r))$ và $(\beta(u_s))$. Tại mỗi cặp từ đối ứng $(w_r, u_s)$ có cùng khung cơ sở $\beta(w_r) = \beta(u_s)$ nhưng khác nhau ở dấu phụ hoặc nét \textit{d/đ}, từ $u_s$ (giữ nguyên quy cách viết hoa của $w_r$) chỉ được chọn thay cho $w_r$ khi thỏa mãn đồng thời điều kiện bất đối xứng:
+\begin{equation}
+    \phi(w_r) \notin \mathcal{K}_i \quad \land \quad \phi(u_s) \in \mathcal{K}_i,
+\end{equation}
+trong đó $\phi(\cdot)$ là hàm trích khóa âm tiết giữ nguyên dấu phụ chữ cái.
+
+\begin{softbox}
+\textbf{Đặc tính an toàn của luật chọn lọc:} Do chỉ lựa chọn giữa các từ thực sự do các bộ nhận dạng đọc ra trên cùng hộp dòng, cơ chế ROVER liên ngôn ngữ tránh được việc tự sinh từ ngoài ảnh gốc. Đồng thời, điều kiện bất đối xứng đảm bảo giả thuyết chính chỉ bị thay thế khi khóa âm của nó không khớp với bất kỳ tự hình Nôm nào trong cửa sổ ba trang đối ứng, trong khi giả thuyết phụ lại khớp trực tiếp với một tự hình hiện diện trên trang.
+\end{softbox}

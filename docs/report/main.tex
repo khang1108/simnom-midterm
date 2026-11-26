@@ -1,0 +1,156 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage{fontspec}
+\setmainfont[
+  Path=/usr/share/texmf-dist/fonts/opentype/public/cm-unicode/,
+  Extension=.otf,
+  UprightFont=cmunrm,
+  BoldFont=cmunbx,
+  ItalicFont=cmunti,
+  BoldItalicFont=cmunbi
+]{cmunrm}
+\setsansfont[
+  Path=/usr/share/texmf-dist/fonts/opentype/public/cm-unicode/,
+  Extension=.otf,
+  UprightFont=cmunss,
+  BoldFont=cmunsx,
+  ItalicFont=cmunsi
+]{cmunss}
+\setmonofont[
+  Path=/usr/share/texmf-dist/fonts/opentype/public/cm-unicode/,
+  Extension=.otf,
+  UprightFont=cmuntt,
+  BoldFont=cmuntb,
+  ItalicFont=cmunit,
+  Scale=0.92
+]{cmuntt}
+
+% Font chuyên dụng Hán Nôm phủ trọn CJK Extension B--I và ký tự đại diện U+3013
+\newfontfamily\nomfont[
+  Path=../../output/demo_parallel/fonts/,
+  Extension=.ttf,
+  Scale=1.06
+]{NomNaTong-Regular}
+\newfontfamily\idsfont{Noto Serif CJK TC}[Scale=0.96]
+
+\newcommand{\nom}[1]{{\nomfont #1}}
+\newcommand{\ids}[1]{{\idsfont #1}}
+
+\usepackage{a4wide,amssymb,latexsym,multicol,array,hhline,fancyhdr}
+\usepackage{amsmath,cases}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{longtable}
+\usepackage{placeins}
+\usepackage{capt-of}
+\usepackage{tabularx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{lastpage}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{geometry}
+\geometry{a4paper, top=2.4cm, bottom=2.2cm, left=2.2cm, right=2.2cm}
+\usepackage{setspace}
+\usepackage{indentfirst}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage[shortlabels]{enumitem}
+\usepackage{hyperref}
+
+\renewcommand{\baselinestretch}{1.38}
+
+\newtcbox{\code}{on line,
+    arc=2pt,
+    colback=gray!16,
+    colframe=gray!16,
+    boxrule=0pt,
+    boxsep=0pt, left=2.5pt, right=2.5pt, top=1.5pt, bottom=1.5pt,
+    fontupper=\ttfamily\small
+}
+
+\newtcolorbox{softbox}{
+    colback=black!3,
+    colframe=black!3,
+    arc=8pt,
+    boxrule=0pt,
+    left=10pt, right=10pt, top=8pt, bottom=8pt,
+    fontupper=\itshape\color{black!82}
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=red!75!black,
+    urlcolor=blue!70!black,
+    filecolor=magenta
+}
+
+\setlength{\headheight}{36pt}
+\pagestyle{fancy}
+\fancyhead{}
+\fancyhead[L]{%
+ \begin{tabular}{@{}rl@{}}
+    \begin{picture}(24,15)(0,0)
+    \put(0,-7){\includegraphics[width=8mm, height=8mm]{images/khtn.png}}
+    \end{picture}&
+    \begin{tabular}{@{}l@{}}
+        \textbf{\ttfamily Ho Chi Minh University of Science - VNUHCM}\\
+        \textbf{\ttfamily Faculty of Information Technology}
+    \end{tabular}
+ \end{tabular}%
+}
+\fancyhead[R]{%
+    \begin{tabular}{@{}r@{}}
+        \scriptsize\ttfamily 24120068 $\cdot$ 24120414\\
+        \scriptsize\ttfamily Project Report
+    \end{tabular}%
+}
+\fancyfoot{}
+\fancyfoot[L]{\scriptsize\ttfamily Natural Language Processing}
+\fancyfoot[R]{\scriptsize\ttfamily Trang {\thepage}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0.3pt}
+
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{2}
+
+\renewcommand{\contentsname}{Mục lục}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\refname}{Tài liệu tham khảo}
+\renewcommand{\listfigurename}{Danh mục hình vẽ}
+\renewcommand{\listtablename}{Danh mục bảng biểu}
+
+\sloppy
+
+\begin{document}
+
+\input{sections/title}
+\thispagestyle{empty}
+
+\newpage
+\thispagestyle{empty}
+\tableofcontents
+\newpage
+
+\renewcommand{\arraystretch}{1.25}
+\setcounter{page}{1}
+
+\input{sections/intro}
+\input{sections/architecture}
+\input{sections/ocr_rover}
+\input{sections/alignment}
+\input{sections/experiments}
+\input{sections/conclusion}
+\input{sections/contribution}
+
+\newpage
+\input{sections/appendix}
+
+\newpage
+\addcontentsline{toc}{section}{Tài liệu tham khảo}
+\bibliographystyle{IEEEtran}
+\bibliography{ref}
+
+\end{document}

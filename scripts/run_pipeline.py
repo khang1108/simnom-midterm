@@ -122,7 +122,7 @@ def main():
         zip_path = package_submission(
             processed_books_dir="data/processed",
             output_zip_dir="output",
-            report_pdf_path="24120068_24120151_24120103_report.pdf"
+            report_pdf_path="output/24120068_24120414_report.pdf"
         )
         logger.info(f"  -> Đã tạo gói nộp bài thành công: {zip_path}")
 

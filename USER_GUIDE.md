@@ -2,9 +2,8 @@
 **Dự án:** Xây dựng Ngữ liệu Song ngữ Hán Nôm – Quốc ngữ Tự động  
 **Quy chuẩn áp dụng:** Quy_định_đồ_án_v2.6.pdf  
 **Nhóm thực hiện:**
-- Nguyễn Phúc Khang (MSSV: 24120068 - Trưởng nhóm)
-- Phạm Minh Trọng (MSSV: 24120151)
-- Hoàng Trọng Nghĩa (MSSV: 24120103)
+- Nguyễn Phúc Khang (Phuc-Khang Nguyen — MSSV: 24120068, `24120068@student.hcmus.edu.vn`)
+- Võ Quang Phúc (Quang-Phuc Vo — MSSV: 24120414, `24120414@student.hcmus.edu.vn`)
 
 ---
 
@@ -159,7 +158,7 @@ python3 scripts/run_pipeline.py \
 - Dóng hàng ngữ âm từng câu Nôm với Quốc ngữ, tính toán `text_diff` với toạ độ Unicode chuẩn xác.
 - Xuất file `<Tên sách>.csv` (UTF-8 with BOM).
 - Xuất file `<Tên sách>.xlsx` với màu sắc trực quan (Đen = Khớp, Đỏ = `error`, Vàng = `warn`).
-- In bảng tổng kết độ tương đồng (%) theo đúng công thức Quy định v2.4.
+- In bảng tổng kết độ tương đồng (%) theo đúng công thức Quy định v2.6.
 
 #### Giai đoạn 4: Đóng gói bài nộp chuẩn Rubric
 ```bash
@@ -168,10 +167,11 @@ python3 scripts/run_pipeline.py \
     --stage package
 ```
 *Kết quả:*
-- Tạo gói nộp bài chuẩn tại `output/24120068_24120151_24120103.zip` bao gồm:
-  - Thư mục dữ liệu sách `<Tên sách>/` với đầy đủ `ch/`, `vi/`, `blank/`, `_image_map.json`, `.csv`, `.xlsx`.
+- Tạo gói nộp bài chuẩn tại `output/24120068_24120414.zip` bao gồm:
+  - Thư mục dữ liệu sách `<Tên sách>/` với đầy đủ `ch/`, `vi/`, `blank/`, `.pdf`, `_updated.pdf`, `_image_map.json`, `_placeholder_map.json` (nếu có `〓`), `.csv`, `.xlsx`.
   - `source.zip` chứa toàn bộ mã nguồn sạch cùng `requirements.txt` đã pinned.
-  - Báo cáo tiến độ PDF `24120068_24120151_24120103_report.pdf`.
+  - `extras.zip` chứa bảng ánh xạ PUA/IDS, bảng âm Nôm Công giáo và báo cáo trung gian.
+  - Báo cáo kỹ thuật PDF `24120068_24120414_report.pdf`.
 
 ---
 

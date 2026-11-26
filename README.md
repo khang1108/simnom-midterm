@@ -5,16 +5,15 @@ Dự án đồ án môn học Xử lý Ngôn ngữ Tự nhiên (Natural Language
 ---
 
 ## 👥 Thông Tin Nhóm Thực Hiện
-- **24120068** - Nguyễn Phúc Khang (Nhóm trưởng) - `24120068@student.hcmus.edu.vn`
-- **24120151** - Phạm Minh Trọng - `24120151@student.hcmus.edu.vn`
-- **24120103** - Hoàng Trọng Nghĩa - `24120103@student.hcmus.edu.vn`
+- **24120068** - Nguyễn Phúc Khang (Phuc-Khang Nguyen) - `24120068@student.hcmus.edu.vn`
+- **24120414** - Võ Quang Phúc (Quang-Phuc Vo) - `24120414@student.hcmus.edu.vn`
 
 ---
 
 ## 📖 Giới Thiệu Dự Án
 Dự án tập trung giải quyết bài toán xây dựng ngữ liệu song ngữ tự động (Automated Parallel Corpus Construction) giữa văn bản **Hán Nôm** cổ và bản dịch âm **Quốc ngữ** từ các tài liệu lịch sử scan chất lượng cao dạng PDF (cụ thể là bộ sách tôn giáo phân loại **T1**: *Sách Dạy Đấng Làm Người Sửa Mình*, Tập 1 & Tập 2).
 
-Hệ thống được thiết kế theo **Quy định đồ án v2.4** với mức độ tự động hóa tối đa:
+Hệ thống được thiết kế theo **Quy định đồ án v2.6** với mức độ tự động hóa tối đa:
 1. **Trích xuất ảnh:** Cắt PDF bằng `pdftoppm` ở 72 DPI (xấp xỉ độ phân giải ảnh gốc nhúng trong PDF, 800×1135; cắt 300 DPI chỉ phóng to ảnh ~5,5 lần). Trang trùng được loại bằng `qpdf` thành `<Tên sách>_updated.pdf`.
 2. **Phân loại layout T1:** Khoảng trang của từng thư mục (`vi`, `ch`, `intro`, `ref`, `toc`, `blank`, `misc`, `missing/ch`) và cách ghép cặp trang Quốc ngữ (đọc xuôi) – Hán Nôm (đọc ngược) khai báo trong `configs/books_structure.json`, sinh file ánh xạ `_image_map.json` và tự kiểm định.
 3. **Động cơ OCR thống nhất (OCREngine):**
@@ -28,7 +27,7 @@ Hệ thống được thiết kế theo **Quy định đồ án v2.4** với m�
    - `<Tên sách>.xlsx`: Định dạng RichText đa màu trong từng ô tính (Đen = Khớp, Đỏ = `error`, Vàng = `warn`).
    - Tự động đánh giá độ tương đồng theo công thức chuẩn:
      $$\text{Độ tương đồng (\%)} = \left(1 - \frac{\text{unmatched\_chars (red)}}{\text{total\_nom\_chars}}\right) \times 100 \ge 95\%$$
-7. **Đóng gói tự động:** Tự động xác thực toàn vẹn dữ liệu và đóng gói nộp bài thành file `<MSSV1_MSSV2_MSSV3>.zip`.
+7. **Đóng gói tự động:** Tự động xác thực toàn vẹn dữ liệu (bao gồm `_placeholder_map.json` theo v2.6) và đóng gói nộp bài thành file `24120068_24120414.zip`.
 
 ---
 

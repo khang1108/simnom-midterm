@@ -187,11 +187,15 @@ def validate_book_config(cfg: Dict[str, Any]) -> Dict[str, List[int]]:
 
 
 def write_updated_pdf(book_dir: Path, book_name: str) -> Path:
+    from contextlib import ExitStack
     imgs = {p.name: p for sub in (*PRIMARY_FOLDERS, "missing/vi") for p in (book_dir / sub).glob("*.jpg")}
-    first, *rest = [Image.open(imgs[n]) for n in sorted(imgs, key=lambda n: int(n.rsplit(".", 2)[1].split("_")[0]))]
+    ordered = sorted(imgs, key=lambda n: int(n.rsplit(".", 2)[1].split("_")[0]))
     out = book_dir / f"{book_name}_updated.pdf"
     tmp = out.with_suffix(".tmp.pdf")
-    first.save(tmp, save_all=True, append_images=rest, resolution=72.0, quality=95)
+    with ExitStack() as stack:
+        opened = [stack.enter_context(Image.open(imgs[n])) for n in ordered]
+        first, *rest = opened
+        first.save(tmp, save_all=True, append_images=rest, resolution=72.0, quality=95)
     tmp.replace(out)
     return out
 
@@ -350,11 +354,14 @@ def prepare_book(
             dest_name = format_page_filename(book_name, idx, actual_pages)
             dest_path = book_dir / target_folder / dest_name
             shutil.move(str(src_img), str(dest_path))
-            if idx in missing_ch_set:
-                shutil.copy2(str(dest_path), str(book_dir / "missing" / "ch" / dest_name))
 
     for p in cfg.get("rotate_180", []):
         rotate_180(book_dir / page_to_primary[int(p)] / format_page_filename(book_name, int(p), actual_pages))
+
+    for idx in missing_ch_set:
+        dest_name = format_page_filename(book_name, idx, actual_pages)
+        src_primary = book_dir / page_to_primary[idx] / dest_name
+        shutil.copy2(str(src_primary), str(book_dir / "missing" / "ch" / dest_name))
 
     shutil.copy2(source_pdf, book_dir / f"{book_name}.pdf")
     if qpdf_spec or cfg.get("rotate_180"):
